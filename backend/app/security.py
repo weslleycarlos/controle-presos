@@ -6,7 +6,7 @@ from typing import Optional
 
 # --- Configuração do Token (JWT) ---
 # Esta chave secreta DEVE ser protegida. No deploy, mude para uma variável de ambiente.
-SECRET_KEY = "SUA_CHAVE_SECRETA_MUITO_FORTE_AQUI" 
+SECRET_KEY = "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc" 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8 # 8 horas
 
