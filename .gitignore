@@ -1,0 +1,22 @@
+# --- Backend (Python) ---
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.env          # Muito importante: Arquivo de senhas
+backend/local.db      # Banco de dados SQLite local
+backend/local.db-journal # Arquivo temporário do SQLite
+
+# --- Frontend (Node/React) ---
+frontend/node_modules/
+frontend/.env* # Ignora .env, .env.local, .env.production etc.
+frontend/dist/        # Pasta de build do frontend (gerada por 'npm run build')
+frontend/.DS_Store    # Arquivo do macOS
+
+# --- Arquivos de IDE/Editor ---
+.vscode/
+.idea/
+
+# --- Arquivos de Sistema Operacional ---
+*.log
+*.swp

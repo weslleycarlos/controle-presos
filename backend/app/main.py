@@ -1,0 +1,333 @@
+
+from . import crud, models, schemas
+from .database import SessionLocal, engine, get_db
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session, joinedload
+from typing import List
+from pydantic import BaseModel
+from datetime import timedelta, datetime, timezone
+from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token # <-- Adicione decode_access_token
+from . import crud, models, schemas
+from .database import SessionLocal, engine, get_db
+from apscheduler.schedulers.background import BackgroundScheduler
+
+# Esta linha é crucial! Ela cria as tabelas no seu banco de dados
+# com base no que definimos em models.py
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Sistema de Controle de Presos")
+
+# --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
+# Lista de "origens" (endereços) que podem acessar este backend
+origins = [
+    "http://localhost:5173", # O endereço do seu frontend React (Vite)
+    "http://localhost",
+    "http://127.0.0.1:5173", # Outra forma de acessar o mesmo endereço
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # Quais origens são permitidas
+    allow_credentials=True,    # Permite cookies/tokens (autenticação)
+    allow_methods=["*"],       # Permite todos os métodos (GET, POST, etc)
+    allow_headers=["*"],       # Permite todos os cabeçalhos (como 'Authorization')
+)
+# --- FIM DA CONFIGURAÇÃO DO CORS ---
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    Dependência para obter o usuário logado a partir do token.
+    """
+    cpf = decode_access_token(token)
+    if cpf is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = crud.get_user_by_cpf(db, cpf=cpf)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário não encontrado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_active:
+         raise HTTPException(status_code=400, detail="Usuário inativo")
+    return user
+
+@app.post("/api/users/", response_model=schemas.User, tags=["Autenticação"])
+def create_new_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    Cria um novo usuário. (Em produção, isso deve ser protegido ou removido)
+    """
+    db_user = crud.get_user_by_cpf(db, cpf=user.cpf)
+    if db_user:
+        raise HTTPException(status_code=400, detail="CPF já cadastrado")
+    return crud.create_user(db=db, user=user)
+
+
+@app.post("/api/token", response_model=schemas.Token, tags=["Autenticação"])
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(), 
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint de Login. Recebe CPF (no campo 'username') e Senha.
+    Retorna um Token JWT.
+    """
+    # O form_data usa 'username', vamos usá-lo para o nosso 'cpf'
+    user = crud.get_user_by_cpf(db, cpf=form_data.username)
+    
+    # Verifica se o usuário existe e se a senha está correta
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="CPF ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Cria o token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.cpf, "role": user.role}, 
+        expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# --- Endpoints de Preso ---
+
+# --- NOVO ENDPOINT DE CADASTRO COMPLETO ---
+@app.post("/api/cadastro-completo", response_model=schemas.Preso, tags=["Presos"])
+def create_preso_e_processo(
+    cadastro: schemas.PresoCadastroCompleto,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # <-- ROTA PROTEGIDA
+):
+    """
+    Cria um novo preso e seus processos iniciais.
+    Exige autenticação.
+    """
+    # (Opcional: verificar se o 'current_user' tem permissão de cadastro)
+    
+    try:
+        return crud.create_preso_completo(db=db, cadastro=cadastro)
+    except Exception as e:
+        # (Opcional: logar o erro 'e')
+        raise HTTPException(status_code=400, detail=f"Erro ao cadastrar: {e}")
+
+@app.post("/api/presos/", response_model=schemas.Preso, tags=["Presos"])
+def create_preso(preso: schemas.PresoCreate, db: Session = Depends(get_db)):
+    # Verifica se o CPF já existe
+    if preso.cpf:
+        db_preso = crud.get_preso_by_cpf(db, cpf=preso.cpf)
+        if db_preso:
+            raise HTTPException(status_code=400, detail="CPF já cadastrado")
+    return crud.create_preso(db=db, preso=preso)
+
+@app.get("/api/presos/search/", response_model=List[schemas.PresoDetalhe], tags=["Presos"])
+def search_presos(nome: str, db: Session = Depends(get_db)):
+    # Critério de sucesso: "Usuário localiza um preso..."
+    presos = crud.search_presos_by_name(db, nome=nome)
+    return presos
+
+@app.get("/api/presos/{preso_id}", response_model=schemas.PresoDetalhe, tags=["Presos"])
+def read_preso_details(preso_id: int, db: Session = Depends(get_db)):
+    # Critério de sucesso: "...vê todas as informações principais"
+    db_preso = crud.get_preso(db, preso_id=preso_id)
+    if db_preso is None:
+        raise HTTPException(status_code=404, detail="Preso não encontrado")
+    return db_preso
+
+# --- Endpoints de Processo ---
+
+@app.post("/api/presos/{preso_id}/processos/", response_model=schemas.Processo, tags=["Processos"])
+def create_processo_for_preso(
+    preso_id: int, processo: schemas.ProcessoCreate, db: Session = Depends(get_db)
+):
+    # (Poderia checar se o preso_id existe primeiro, mas o FK do banco já vai barrar)
+    return crud.create_processo(db=db, processo=processo, preso_id=preso_id)
+
+# --- Endpoints de Evento ---
+
+@app.post("/api/processos/{processo_id}/eventos/", response_model=schemas.Evento, tags=["Eventos"])
+def create_evento_for_processo(
+    processo_id: int, 
+    evento: schemas.EventoCreate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # <-- ADICIONE A PROTEÇÃO
+):
+    # (Opcional: checar se o usuário tem permissão para este processo)
+    return crud.create_evento(db=db, evento=evento, processo_id=processo_id)
+
+# --- Endpoint de Alerta (O MVP do seu sistema de alertas) ---
+# (A lógica de background ainda não está aqui, mas o endpoint de consulta está)
+
+@app.get("/api/alertas/proximos", response_model=List[schemas.Evento], tags=["Alertas"])
+def get_proximos_alertas(db: Session = Depends(get_db)):
+    """
+    Retorna todos os eventos com status 'pendente' ou 'disparado'
+    que ainda não aconteceram, ordenados pelo mais próximo.
+    """
+    agora = datetime.now()
+    eventos = db.query(models.Evento).filter(
+        models.Evento.data_evento > agora,
+        models.Evento.alerta_status.in_([models.AlertaStatusEnum.pendente, models.AlertaStatusEnum.disparado])
+    ).order_by(models.Evento.data_evento.asc()).limit(50).all()
+    
+    return eventos
+
+# --- LÓGICA DO JOB AGENDADO (ROBÔ) ---
+
+def check_alertas_job():
+    """
+    Função que o Scheduler rodará.
+    Verifica eventos nos próximos 7 dias e muda o status para 'disparado'.
+    """
+    print(f"[{datetime.now()}] Rodando Job de Verificação de Alertas...")
+    db: Session = SessionLocal() # O Job precisa criar sua própria sessão de DB
+    try:
+        agora = datetime.now(timezone.utc)
+        limite_dias = agora + timedelta(days=7)
+
+        # 1. Encontra eventos "pendentes" que vencem nos próximos 7 dias
+        eventos_para_alertar = db.query(models.Evento).filter(
+            models.Evento.data_evento > agora,
+            models.Evento.data_evento <= limite_dias,
+            models.Evento.alerta_status == models.AlertaStatusEnum.pendente
+        ).all()
+
+        if not eventos_para_alertar:
+            print("Nenhum novo alerta para disparar.")
+            return
+
+        # 2. Atualiza o status
+        for evento in eventos_para_alertar:
+            evento.alerta_status = models.AlertaStatusEnum.disparado
+        
+        db.commit()
+        print(f"Job finalizado. {len(eventos_para_alertar)} alertas atualizados para 'disparado'.")
+
+    except Exception as e:
+        print(f"Erro no Job de Alertas: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def start_scheduler():
+    """
+    Inicia o Scheduler quando o FastAPI é iniciado.
+    """
+    scheduler = BackgroundScheduler(timezone="America/Sao_Paulo") # Use o fuso do Brasil
+    
+    # Roda o job todo dia às 8:00 da manhã
+    scheduler.add_job(check_alertas_job, 'cron', hour=8, minute=0)
+    
+    # (Opcional: Rodar o job agora mesmo para teste)
+    scheduler.add_job(check_alertas_job, 'date', run_date=datetime.now() + timedelta(seconds=5))
+    
+    scheduler.start()
+    print("Scheduler de Alertas iniciado. Job rodará diariamente às 08:00.")
+
+
+# ... (get_current_user, /api/users/, /api/token) ...
+
+# --- NOVO ENDPOINT DE ALERTAS ATIVOS ---
+@app.get("/api/alertas/ativos", response_model=List[schemas.EventoAlerta], tags=["Alertas"])
+def get_alertas_ativos(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Protegido
+):
+    """
+    Retorna todos os eventos que foram "disparados" e ainda não venceram.
+    """
+    agora = datetime.now(timezone.utc)
+    
+    alertas = db.query(models.Evento).options(
+        # Eager Loading: Força o SQLAlchemy a buscar os dados relacionados
+        # em uma única query (Evento -> Processo -> Preso)
+        joinedload(models.Evento.processo).joinedload(models.Processo.preso)
+    ).filter(
+        models.Evento.alerta_status == models.AlertaStatusEnum.disparado,
+        models.Evento.data_evento > agora # Não mostra alertas que já passaram
+    ).order_by(
+        models.Evento.data_evento.asc() # Do mais urgente para o menos
+    ).all()
+    
+    return alertas
+
+# --- Novo Schema para o request ---
+class EventoStatusUpdate(BaseModel):
+    status: models.AlertaStatusEnum # Força que o status seja um dos nossos Enums
+
+# --- NOVO ENDPOINT DE ATUALIZAÇÃO DE STATUS ---
+@app.patch("/api/eventos/{evento_id}/status", response_model=schemas.Evento, tags=["Alertas"])
+def update_evento_status(
+    evento_id: int,
+    status_update: EventoStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Protegido
+):
+    """
+    Atualiza o status de um evento (ex: de 'disparado' para 'concluido').
+    """
+    db_evento = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
+    
+    if db_evento is None:
+        raise HTTPException(status_code=404, detail="Evento não encontrado")
+    
+    # (Opcional: verificar se o 'current_user' tem permissão para este evento)
+
+    db_evento.alerta_status = status_update.status
+    db.commit()
+    db.refresh(db_evento)
+    return db_evento
+
+# --- NOVOS ENDPOINTS DE UPDATE (PUT) E DELETE ---
+
+@app.put("/api/presos/{preso_id}", response_model=schemas.Preso, tags=["Presos"])
+def update_preso_endpoint(
+    preso_id: int,
+    preso_update: schemas.PresoCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Protegido
+):
+    """Atualiza os dados de um preso."""
+    db_preso = crud.update_preso(db, preso_id=preso_id, preso_update=preso_update)
+    if db_preso is None:
+        raise HTTPException(status_code=404, detail="Preso não encontrado")
+    return db_preso
+
+
+@app.put("/api/processos/{processo_id}", response_model=schemas.Processo, tags=["Processos"])
+def update_processo_endpoint(
+    processo_id: int,
+    processo_update: schemas.ProcessoCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Protegido
+):
+    """Atualiza os dados de um processo."""
+    db_processo = crud.update_processo(db, processo_id=processo_id, processo_update=processo_update)
+    if db_processo is None:
+        raise HTTPException(status_code=404, detail="Processo não encontrado")
+    return db_processo
+
+
+@app.delete("/api/presos/{preso_id}", response_model=schemas.Preso, tags=["Presos"])
+def delete_preso_endpoint(
+    preso_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user) # Protegido
+):
+    """Deleta um preso e todos os seus dados associados."""
+    db_preso = crud.delete_preso(db, preso_id=preso_id)
+    if db_preso is None:
+        raise HTTPException(status_code=404, detail="Preso não encontrado")
+    return db_preso
