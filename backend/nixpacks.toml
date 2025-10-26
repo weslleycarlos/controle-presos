@@ -1,0 +1,15 @@
+# backend/nixpacks.toml
+
+# Define as fases do build
+[phases.setup]
+# Lista de pacotes Nix a serem instalados no ambiente ANTES do build
+nixPkgs = ["...", "postgresql-client"] 
+
+# (O "..." é importante se o Railway/Nixpacks precisar de outros pacotes padrão)
+# Alternativamente, dependendo da versão do Nixpacks, apenas o nome do pacote pode ser suficiente:
+# nixPkgs = ["postgresql-client"] 
+# Tente a versão com "..." primeiro.
+
+[start]
+# Seu comando de start permanece o mesmo
+cmd = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
