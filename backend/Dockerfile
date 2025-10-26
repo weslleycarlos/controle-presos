@@ -26,4 +26,4 @@ EXPOSE 8080
 
 # 8. O comando de início (O Railway vai usar o seu "Start Command" em vez deste,
 # mas é bom ter um padrão)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
