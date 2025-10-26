@@ -47,7 +47,7 @@ export function PaginaLogin() {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
       // Navega o usuário para o Dashboard (rota principal)
-      navigate('/');
+      window.location.href = '/';
 
     } catch (error) {
       // Se o backend retornar 401 (Não Autorizado) ou outro erro

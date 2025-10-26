@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, Link as RouterLink } from 'react-router-dom';
+import axios from 'axios';
 import {
   AppBar, Toolbar, Typography, Box, IconButton, Avatar,
   Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
@@ -26,10 +27,19 @@ export function Layout() {
     setMobileOpen(!mobileOpen);
   };
 
-  const fazerLogout = () => {
+const fazerLogout = () => {
     console.log("Fazendo logout...");
-    // TODO: Limpar o token salvo
-    navigate('/login');
+
+    // --- CORREÇÃO ---
+    // 1. Remove o token do armazenamento do navegador
+    localStorage.removeItem('authToken');
+
+    // 2. Limpa o cabeçalho de autenticação das futuras requisições do Axios
+    delete axios.defaults.headers.common['Authorization'];
+
+    // 3. Força o recarregamento para a página de login
+    // Isso limpa qualquer estado do React e garante que a RotaProtegida funcione.
+    window.location.href = '/login';
   };
 
   // Definição do conteúdo do menu
