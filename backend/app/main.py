@@ -22,7 +22,7 @@ app = FastAPI(title="Sistema de Controle de Presos")
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
 # Lista de "origens" (endereços) que podem acessar este backend
 origins = [
-    "https://controle-presos-front-production.up.railway.app/", # Endereço do frontend em produção
+    "https://controle-presos-front-production.up.railway.app", # Endereço do frontend em produção
     "http://localhost:5173", # O endereço do seu frontend React (Vite)
     "http://localhost",
     "http://127.0.0.1:5173", # Outra forma de acessar o mesmo endereço
