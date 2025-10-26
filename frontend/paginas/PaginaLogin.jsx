@@ -9,9 +9,9 @@ import {
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
-// URL da nossa API (o FastAPI rodando em http://127.0.0.1:8000)
-// É uma boa prática definir isso em um lugar só
-const API_URL = 'http://127.0.0.1:8000';
+// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
+// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export function PaginaLogin() {
   const [cpf, setCpf] = useState('');

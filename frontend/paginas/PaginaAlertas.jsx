@@ -14,7 +14,9 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'; // 
 import VisibilityIcon from '@mui/icons-material/Visibility'; // Ícone de "Ver"
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'; // Para os filtros
 
-const API_URL = 'http://127.0.0.1:8000';
+// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
+// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Função para formatar datas (YYYY-MM-DDTHH:MM -> DD/MM/YYYY HH:MM)
 const formatarData = (dataISO) => {

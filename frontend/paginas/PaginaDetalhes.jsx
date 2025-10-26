@@ -28,7 +28,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 
 // --- CONSTANTES E HELPERS ---
 
-const API_URL = 'http://127.0.0.1:8000';
+// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
+// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Estilo do Modal (para centralizá-lo)
 const styleModal = {
