@@ -1,11 +1,11 @@
-
+from datetime import date
 from . import crud, models, schemas
 from .database import SessionLocal, engine, get_db
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import timedelta, datetime, timezone
 from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token # <-- Adicione decode_access_token
@@ -132,9 +132,20 @@ def create_preso(preso: schemas.PresoCreate, db: Session = Depends(get_db)):
     return crud.create_preso(db=db, preso=preso)
 
 @app.get("/api/presos/search/", response_model=List[schemas.PresoDetalhe], tags=["Presos"])
-def search_presos(nome: str, db: Session = Depends(get_db)):
-    # Critério de sucesso: "Usuário localiza um preso..."
-    presos = crud.search_presos_by_name(db, nome=nome)
+def search_presos_endpoint( # Mudei o nome da função para evitar conflito
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user), # Protegido
+    # --- NOVOS PARÂMETROS DE CONSULTA ---
+    nome: Optional[str] = None,
+    status_processual: Optional[str] = None,
+    data_prisao: Optional[date] = None
+):
+    presos = crud.search_presos(
+        db=db, 
+        nome=nome, 
+        status_processual=status_processual, 
+        data_prisao=data_prisao
+    )
     return presos
 
 @app.get("/api/presos/{preso_id}", response_model=schemas.PresoDetalhe, tags=["Presos"])

@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func # para usar func.lower
+from datetime import date
+from typing import Optional
 from . import models, schemas
 from .security import get_password_hash # Importar nossa função de hash
 
@@ -37,13 +39,38 @@ def get_preso(db: Session, preso_id: int):
 def get_preso_by_cpf(db: Session, cpf: str):
     return db.query(models.Preso).filter(models.Preso.cpf == cpf).first()
 
-def search_presos_by_name(db: Session, nome: str, skip: int = 0, limit: int = 100):
-    query_nome = f"%{nome.lower()}%"
-    return db.query(models.Preso).options(
-        joinedload(models.Preso.processos) # <-- ADICIONA O JOIN COM PROCESSOS
-    ).filter(
-        func.lower(models.Preso.nome_completo).ilike(query_nome)
-    ).offset(skip).limit(limit).all()
+def search_presos(
+    db: Session, 
+    nome: Optional[str] = None, 
+    status_processual: Optional[str] = None,
+    data_prisao: Optional[date] = None,
+    skip: int = 0, 
+    limit: int = 100
+):
+    """
+    Busca presos por múltiplos critérios.
+    Todos os filtros são opcionais.
+    """
+    # Começa a query base, já fazendo o JOIN em Processos
+    query = db.query(models.Preso).join(models.Processo).options(
+        joinedload(models.Preso.processos)
+    )
+
+    # 1. Filtro por Nome (se fornecido)
+    if nome:
+        query_nome = f"%{nome.lower()}%"
+        query = query.filter(func.lower(models.Preso.nome_completo).ilike(query_nome))
+
+    # 2. Filtro por Status (se fornecido)
+    if status_processual:
+        query = query.filter(models.Processo.status_processual == status_processual)
+        
+    # 3. Filtro por Data da Prisão (se fornecida)
+    if data_prisao:
+        query = query.filter(models.Processo.data_prisao == data_prisao)
+
+    # Aplica ordenação, paginação e executa
+    return query.order_by(models.Preso.nome_completo.asc()).offset(skip).limit(limit).all()
 
 def create_preso(db: Session, preso: schemas.PresoCreate):
     db_preso = models.Preso(

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Outlet, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { Outlet, Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
 import {
   AppBar, Toolbar, Typography, Box, IconButton, Avatar,
   Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
-  CssBaseline, Divider, Typography as MuiTypography
+  CssBaseline, Divider, Typography as MuiTypography, Menu, MenuItem,
+  Tooltip, Badge
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 
@@ -17,29 +18,50 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu'; // Ícone Hamburguer
 
+
 const drawerWidth = 240; // Largura do nosso menu lateral
 
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false); // Estado para menu mobile
-  const navigate = useNavigate();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
 
+// --- ESTADO PARA OS MENUS ---
+  // Precisamos de um "anchor" (âncora) para cada menu, 
+  // para o MUI saber onde o menu deve abrir.
+  const [anchorElNotificacoes, setAnchorElNotificacoes] = useState(null);
+  const [anchorElConfig, setAnchorElConfig] = useState(null);
+  const [anchorElUsuario, setAnchorElUsuario] = useState(null);
+
+  // --- Handlers para ABRIR os menus ---
+  const handleAbrirMenuNotificacoes = (event) => {
+    setAnchorElNotificacoes(event.currentTarget);
+  };
+  const handleAbrirMenuConfig = (event) => {
+    setAnchorElConfig(event.currentTarget);
+  };
+  const handleAbrirMenuUsuario = (event) => {
+    setAnchorElUsuario(event.currentTarget);
+  };
+
+  // --- Handlers para FECHAR os menus ---
+  const handleFecharMenuNotificacoes = () => {
+    setAnchorElNotificacoes(null);
+  };
+  const handleFecharMenuConfig = () => {
+    setAnchorElConfig(null);
+  };
+  const handleFecharMenuUsuario = () => {
+    setAnchorElUsuario(null);
+  };
+
 const fazerLogout = () => {
     console.log("Fazendo logout...");
-
-    // --- CORREÇÃO ---
-    // 1. Remove o token do armazenamento do navegador
     localStorage.removeItem('authToken');
-
-    // 2. Limpa o cabeçalho de autenticação das futuras requisições do Axios
     delete axios.defaults.headers.common['Authorization'];
-
-    // 3. Força o recarregamento para a página de login
-    // Isso limpa qualquer estado do React e garante que a RotaProtegida funcione.
-    window.location.href = '/login';
+    window.location.href = '/login'; // Força o recarregamento
   };
 
   // Definição do conteúdo do menu
@@ -70,14 +92,7 @@ const fazerLogout = () => {
         </ListItem>
       </List>
       <Divider />
-      <List>
-        <ListItem disablePadding>
-          <ListItemButton onClick={fazerLogout}>
-            <ListItemIcon><LogoutIcon /></ListItemIcon>
-            <ListItemText primary="Sair" />
-          </ListItemButton>
-        </ListItem>
-      </List>
+      
     </div>
   );
 
@@ -90,7 +105,7 @@ const fazerLogout = () => {
         position="fixed" 
         sx={{ 
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` }, // Afasta o AppBar da esquerda (só em desktop)
+          ml: { sm: `${drawerWidth}px` },
           backgroundColor: '#ffffff',
           color: '#333333',
           boxShadow: '0 1px 4px rgba(0, 0, 0, 0.1)',
@@ -99,25 +114,83 @@ const fazerLogout = () => {
         <Toolbar>
           <IconButton
             color="inherit"
-            aria-label="open drawer"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: 'none' } }} // Só aparece em mobile
+            sx={{ mr: 2, display: { sm: 'none' } }} 
           >
             <MenuIcon />
           </IconButton>
           
-          {/* Título (não mostra em mobile, pois o AppBar é menor) */}
           <Typography variant="h6" noWrap component="div" sx={{ fontWeight: '700', color: '#0A2463', display: { xs: 'none', sm: 'block' } }}>
             Controle de Presos
           </Typography>
 
           <Box sx={{ flexGrow: 1 }} />
-          <IconButton color="inherit"><NotificationsNoneOutlinedIcon /></IconButton>
-          <IconButton color="inherit"><SettingsOutlinedIcon /></IconButton>
-          <Avatar sx={{ width: 32, height: 32, ml: 2, cursor: 'pointer' }} alt="Usuário" />
+          
+          {/* --- ÍCONES DO CABEÇALHO ATUALIZADOS --- */}
+          <Box>
+            {/* Ícone de Sino (Notificações) */}
+            <Tooltip title="Notificações">
+              <IconButton color="inherit" onClick={handleAbrirMenuNotificacoes}>
+                <Badge badgeContent={4} color="error"> {/* Badge estático por enquanto */}
+                  <NotificationsIcon />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+
+            {/* Ícone de Engrenagem (Configurações) */}
+            <Tooltip title="Configurações">
+              <IconButton color="inherit" onClick={handleAbrirMenuConfig}>
+                <SettingsOutlinedIcon />
+              </IconButton>
+            </Tooltip>
+            
+            {/* Avatar do Usuário */}
+            <Tooltip title="Opções do Usuário">
+              <IconButton onClick={handleAbrirMenuUsuario} sx={{ p: 0, ml: 2 }}>
+                <Avatar sx={{ width: 32, height: 32 }} alt="Usuário" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Toolbar>
       </AppBar>
+
+      {/* --- MENUS DROPDOWN --- */}
+
+      {/* Menu de Notificações */}
+      <Menu
+        anchorEl={anchorElNotificacoes}
+        open={Boolean(anchorElNotificacoes)}
+        onClose={handleFecharMenuNotificacoes}
+      >
+        <MenuItem onClick={handleFecharMenuNotificacoes}>Alerta: Audiência João da Silva</MenuItem>
+        <MenuItem onClick={handleFecharMenuNotificacoes}>Alerta: Prazo Maria Oliveira</MenuItem>
+        <MenuItem onClick={handleFecharMenuNotificacoes}>* Ver todos os alertas *</MenuItem>
+      </Menu>
+
+      {/* Menu de Configurações */}
+      <Menu
+        anchorEl={anchorElConfig}
+        open={Boolean(anchorElConfig)}
+        onClose={handleFecharMenuConfig}
+      >
+        <MenuItem onClick={handleFecharMenuConfig}>Preferências</MenuItem>
+        <MenuItem onClick={handleFecharMenuConfig}>Ajuda</MenuItem>
+      </Menu>
+
+      {/* Menu do Usuário (Avatar) */}
+      <Menu
+        anchorEl={anchorElUsuario}
+        open={Boolean(anchorElUsuario)}
+        onClose={handleFecharMenuUsuario}
+      >
+        <MenuItem onClick={handleFecharMenuUsuario}>Meu Perfil</MenuItem>
+        <Divider />
+        <MenuItem onClick={fazerLogout} sx={{ color: 'error.main' }}>
+          <ListItemIcon sx={{ color: 'error.main' }}><LogoutIcon fontSize="small" /></ListItemIcon>
+          Sair
+        </MenuItem>
+      </Menu>
 
       {/* 2. O Menu Lateral (Drawer) */}
       <Box

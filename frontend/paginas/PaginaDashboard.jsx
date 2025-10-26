@@ -1,13 +1,24 @@
-import React, { useState, useEffect } from 'react'; // Importa useEffect
+import React, { useState, useEffect, useCallback } from 'react'; // Importa useEffect e useCallback
 import axios from 'axios'; // Importa axios
 import {
   Box, Typography, TextField, Button, Paper, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TablePagination, InputAdornment, Skeleton // Skeleton para o "loading"
+  TablePagination, InputAdornment, Skeleton, Grid, FormControl,
+  InputLabel, Select, MenuItem
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Link as RouterLink } from 'react-router-dom'; // Importa o Link do Roteador
+
+
+const opcoesStatusProcessual = [
+  'Aguardando Julgamento',
+  'Cumprindo Pena',
+  'Aguardando Transferência',
+  'Inquérito',
+  'Liberado',
+  'Outro',
+];
 
 // Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
 // Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
@@ -30,21 +41,39 @@ export function PaginaDashboard() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
 
+  const [filtros, setFiltros] = useState({
+    nome: '',
+    status_processual: '',
+    data_prisao: '',
+  });
   // --- FUNÇÃO PARA BUSCAR DADOS ---
-  const fetchPresos = async (busca = '') => {
+  const fetchPresos = useCallback(async () => {
     setIsLoading(true);
     try {
-      // O token já está no Axios (configurado no App.jsx)
-      const response = await axios.get(`${API_URL}/api/presos/search/?nome=${busca}`);
+      // Constrói os parâmetros de consulta dinamicamente
+      const params = new URLSearchParams();
+      if (filtros.nome) {
+        params.append('nome', filtros.nome);
+      }
+      if (filtros.status_processual) {
+        params.append('status_processual', filtros.status_processual);
+      }
+      if (filtros.data_prisao) {
+        params.append('data_prisao', filtros.data_prisao);
+      }
+
+      // Converte os parâmetros para uma string (ex: "?nome=Joao&status=Liberado")
+      const queryString = params.toString();
+      
+      const response = await axios.get(`${API_URL}/api/presos/search/?${queryString}`);
       setPresos(response.data);
-      setPage(0); // Reseta a paginação a cada nova busca
+      setPage(0); // Reseta a paginação
     } catch (error) {
       console.error("Erro ao buscar presos:", error);
-      // TODO: Adicionar um Snackbar de erro aqui também
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filtros]); // Re-cria a função se os 'filtros' mudarem
 
   // --- useEffect ---
   // Roda a função fetchPresos() assim que o componente é montado
@@ -52,11 +81,21 @@ export function PaginaDashboard() {
     fetchPresos(); // Busca inicial (todos os presos)
   }, []); // O array vazio [] significa "rodar apenas uma vez"
 
+  // Handler para o botão "Buscar"
   const handleSearchSubmit = (e) => {
-    e.preventDefault(); // Impede o recarregamento da página (se estivesse em um <form>)
-    fetchPresos(termoBusca);
+    e.preventDefault();
+    fetchPresos();
   };
   
+  // Handler para atualizar os filtros
+  const handleFiltroChange = (e) => {
+    const { name, value } = e.target;
+    setFiltros(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
   // Funções de paginação (iguais)
   const handleChangePage = (event, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (event) => {
@@ -66,48 +105,81 @@ export function PaginaDashboard() {
 
   return (
     <Box>
-      {/* 1. Título da Página */}
+      {/* 1. Título da Página (igual) */}
       <Box sx={{ mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: '800', color: '#333' }}>
           Dashboard de Busca
         </Typography>
         <Typography variant="body1" sx={{ color: '#6c757d' }}>
-          Busque por presos pelo nome e veja dados essenciais.
+          Busque por presos usando um ou mais filtros.
         </Typography>
       </Box>
 
 
-      {/* 2. Barra de Ferramentas (Busca e Filtros) */}
+      {/* 2. Barra de Ferramentas (Busca e Filtros ATUALIZADA) */}
       <Paper 
-        component="form" // Torna a Paper um formulário
-        onSubmit={handleSearchSubmit} // Chama a busca ao pressionar Enter
-        sx={{ p: 2, mb: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}
+        component="form"
+        onSubmit={handleSearchSubmit} 
+        sx={{ p: 2, mb: 3 }}
       >
-        <TextField
-          fullWidth
-          variant="outlined"
-          placeholder="Digite o nome completo do preso..."
-          value={termoBusca}
-          onChange={(e) => setTermoBusca(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: '300px' }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" />
-              </InputAdornment>
-            ),
-          }}
-        />
-        {/* Este botão agora funciona */}
-        <Button 
-          type="submit" 
-          variant="contained"
-          size="large"
-          startIcon={<SearchIcon />}
-          sx={{ height: '56px' }} // Alinha altura com o TextField
-        >
-          Buscar
-        </Button>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={4}>
+            <TextField
+              fullWidth
+              variant="outlined"
+              label="Nome do Preso"
+              name="nome"
+              value={filtros.nome}
+              onChange={handleFiltroChange}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <FormControl fullWidth>
+              <InputLabel id="status-label">Status Processual</InputLabel>
+              <Select
+                labelId="status-label"
+                label="Status Processual"
+                name="status_processual"
+                value={filtros.status_processual}
+                onChange={handleFiltroChange}
+              >
+                <MenuItem value=""><em>Todos</em></MenuItem>
+                {opcoesStatusProcessual.map((opcao) => (
+                  <MenuItem key={opcao} value={opcao}>{opcao}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <TextField
+              fullWidth
+              label="Data da Prisão"
+              name="data_prisao"
+              type="date"
+              value={filtros.data_prisao}
+              onChange={handleFiltroChange}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={2}>
+            <Button 
+              type="submit" 
+              variant="contained"
+              size="large"
+              fullWidth
+              sx={{ height: '56px' }} // Alinha altura com os TextFields
+            >
+              Buscar
+            </Button>
+          </Grid>
+        </Grid>
       </Paper>
 
       {/* 3. Tabela de Resultados */}
