@@ -1,12 +1,21 @@
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from typing import Optional
 
+
+load_dotenv()
 # --- Configuração do Token (JWT) ---
 # Esta chave secreta DEVE ser protegida. No deploy, mude para uma variável de ambiente.
-SECRET_KEY = "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc" 
+SECRET_KEY = os.getenv("SECRET_KEY", "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc")
+if SECRET_KEY == "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc":
+    print("="*50)
+    print("AVISO: Usando chave secreta de DEV. Defina a variável de ambiente SECRET_KEY.")
+    print("="*50)
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8 # 8 horas
 

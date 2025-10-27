@@ -61,16 +61,33 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
          raise HTTPException(status_code=400, detail="Usuário inativo")
     return user
 
-@app.post("/api/users/", response_model=schemas.User, tags=["Autenticação"])
-def create_new_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+# --- 1. ADICIONE ESTA NOVA FUNÇÃO (dependência de admin) ---
+# (Coloque-a logo após a função 'get_current_user')
+def get_current_admin_user(current_user: models.User = Depends(get_current_user)):
     """
-    Cria um novo usuário. (Em produção, isso deve ser protegido ou removido)
+    Verifica se o usuário logado é um admin.
+    Se não for, levanta um erro 403 (Forbidden).
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito a administradores"
+        )
+    return current_user
+
+@app.post("/api/users/", response_model=schemas.User, tags=["Autenticação"])
+def create_new_user(
+    user: schemas.UserCreate, 
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(get_current_admin_user) # <-- NOVA LINHA
+):
+    """
+    Cria um novo usuário. (Protegido - Apenas Admins)
     """
     db_user = crud.get_user_by_cpf(db, cpf=user.cpf)
     if db_user:
         raise HTTPException(status_code=400, detail="CPF já cadastrado")
     return crud.create_user(db=db, user=user)
-
 
 @app.post("/api/token", response_model=schemas.Token, tags=["Autenticação"])
 def login_for_access_token(
