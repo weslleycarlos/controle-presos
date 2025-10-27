@@ -126,7 +126,7 @@ export function PaginaDashboard() {
           <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
-              variant="outlined"
+              variant="outlined" // <-- Este estava correto
               label="Nome do Preso"
               name="nome"
               value={filtros.nome}
@@ -141,11 +141,12 @@ export function PaginaDashboard() {
             />
           </Grid>
           <Grid item xs={12} sm={3}>
-            <FormControl fullWidth>
+            {/* --- CORREÇÃO AQUI --- */}
+            <FormControl sx={{ m: 1, minWidth: 200 }} variant="outlined"> {/* <-- Adicione variant="outlined" */}
               <InputLabel id="status-label">Status Processual</InputLabel>
               <Select
                 labelId="status-label"
-                label="Status Processual"
+                label="Status Processual" // Esta label é necessária
                 name="status_processual"
                 value={filtros.status_processual}
                 onChange={handleFiltroChange}
@@ -158,8 +159,10 @@ export function PaginaDashboard() {
             </FormControl>
           </Grid>
           <Grid item xs={12} sm={3}>
+            {/* --- CORREÇÃO AQUI --- */}
             <TextField
               fullWidth
+              variant="outlined" // <-- Adicione variant="outlined"
               label="Data da Prisão"
               name="data_prisao"
               type="date"
@@ -174,7 +177,7 @@ export function PaginaDashboard() {
               variant="contained"
               size="large"
               fullWidth
-              sx={{ height: '56px' }} // Alinha altura com os TextFields
+              sx={{ height: '56px' }} // Altura padrão do TextField outlined
             >
               Buscar
             </Button>

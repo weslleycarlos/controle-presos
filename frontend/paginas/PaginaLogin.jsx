@@ -29,24 +29,31 @@ export function PaginaLogin() {
     params.append('password', senha);
 
     try {
+      // 1. Pega o token
       const response = await axios.post(`${API_URL}/api/token`, params, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
-
-      // Se deu certo, o backend retorna o token
       const token = response.data.access_token;
-      
-      // --- PONTO CRÍTICO ---
-      // Vamos salvar o token no localStorage do navegador
-      // Isso "mantém" o usuário logado
       localStorage.setItem('authToken', token);
-      
-      // Configura o Axios para *sempre* enviar esse token nas futuras requisições
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-      // Navega o usuário para o Dashboard (rota principal)
+      // --- ATUALIZAÇÃO ---
+      // 2. Busca os dados do usuário (incluindo o tema)
+      try {
+        const userResponse = await axios.get(`${API_URL}/api/users/me`);
+        const temaSalvo = userResponse.data.preferencia_tema || 'light';
+        
+        // 3. Salva a preferência de tema no localStorage ANTES de recarregar
+        localStorage.setItem('tema', temaSalvo);
+
+      } catch (userError) {
+        console.error("Falha ao buscar perfil do usuário no login:", userError);
+        localStorage.setItem('tema', 'light'); // Padrão se falhar
+      }
+      
+      // 4. Redireciona (como corrigimos antes)
       window.location.href = '/';
 
     } catch (error) {

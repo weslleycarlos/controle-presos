@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useTema } from '../TemaContext';
+import { Switch } from '@mui/material';
 import { Outlet, Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
+import { formatarData } from '../util/formatarData';
 import {
   AppBar, Toolbar, Typography, Box, IconButton, Avatar,
   Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
@@ -21,7 +24,15 @@ import MenuIcon from '@mui/icons-material/Menu'; // Ícone Hamburguer
 
 const drawerWidth = 240; // Largura do nosso menu lateral
 
+const tiposDeEvento = {
+  audiencia: "Audiência",
+  reavaliacao_preventiva: "Reavaliação de Prisão",
+  prazo_recurso: "Prazo de Recurso",
+  outro: "Outro"
+};
+
 export function Layout() {
+  const { modo, toggleTema } = useTema();
   const [mobileOpen, setMobileOpen] = useState(false); // Estado para menu mobile
 
   const handleDrawerToggle = () => {
@@ -34,10 +45,37 @@ export function Layout() {
   const [anchorElNotificacoes, setAnchorElNotificacoes] = useState(null);
   const [anchorElConfig, setAnchorElConfig] = useState(null);
   const [anchorElUsuario, setAnchorElUsuario] = useState(null);
+  const [contagemAlertas, setContagemAlertas] = useState(0);
+  const [alertasMenu, setAlertasMenu] = useState([]); // Lista para o dropdown
+  const [isLoadingAlertas, setIsLoadingAlertas] = useState(false);
+  
+
+  // --- BUSCA A CONTAGEM TOTAL DE ALERTAS QUANDO O LAYOUT CARREGA ---
+  useEffect(() => {
+    const fetchContagemAlertas = async () => {
+      try {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/alertas/ativos`);
+        setContagemAlertas(response.data.length);
+      } catch (error) {
+        console.error("Erro ao buscar contagem de alertas:", error);
+      }
+    };
+    fetchContagemAlertas();
+  }, []); // O array vazio [] significa "rodar apenas uma vez"
 
   // --- Handlers para ABRIR os menus ---
-  const handleAbrirMenuNotificacoes = (event) => {
+ const handleAbrirMenuNotificacoes = async (event) => {
     setAnchorElNotificacoes(event.currentTarget);
+    setIsLoadingAlertas(true);
+    try {
+      // Busca apenas os 5 mais urgentes
+      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/alertas/ativos?limit=5`);
+      setAlertasMenu(response.data);
+    } catch (error) {
+      console.error("Erro ao buscar prévia de alertas:", error);
+    } finally {
+      setIsLoadingAlertas(false);
+    }
   };
   const handleAbrirMenuConfig = (event) => {
     setAnchorElConfig(event.currentTarget);
@@ -131,12 +169,13 @@ const fazerLogout = () => {
           <Box>
             {/* Ícone de Sino (Notificações) */}
             <Tooltip title="Notificações">
-              <IconButton color="inherit" onClick={handleAbrirMenuNotificacoes}>
-                <Badge badgeContent={4} color="error"> {/* Badge estático por enquanto */}
-                  <NotificationsIcon />
-                </Badge>
-              </IconButton>
-            </Tooltip>
+            <IconButton color="inherit" onClick={handleAbrirMenuNotificacoes}>
+              {/* Badge agora usa a contagem real */}
+              <Badge badgeContent={contagemAlertas} color="error">
+                <NotificationsIcon />
+              </Badge>
+            </IconButton>
+          </Tooltip>
 
             {/* Ícone de Engrenagem (Configurações) */}
             <Tooltip title="Configurações">
@@ -163,9 +202,29 @@ const fazerLogout = () => {
         open={Boolean(anchorElNotificacoes)}
         onClose={handleFecharMenuNotificacoes}
       >
-        <MenuItem onClick={handleFecharMenuNotificacoes}>Alerta: Audiência João da Silva</MenuItem>
-        <MenuItem onClick={handleFecharMenuNotificacoes}>Alerta: Prazo Maria Oliveira</MenuItem>
-        <MenuItem onClick={handleFecharMenuNotificacoes}>* Ver todos os alertas *</MenuItem>
+        {isLoadingAlertas ? (
+          <MenuItem disabled>Carregando alertas...</MenuItem>
+        ) : alertasMenu.length === 0 ? (
+          <MenuItem disabled>Nenhum alerta ativo.</MenuItem>
+        ) : (
+          // Mapeia os alertas reais
+          alertasMenu.map(alerta => (
+            <MenuItem 
+              key={alerta.id} 
+              component={RouterLink} 
+              to={`/preso/${alerta.processo.preso.id}`}
+              onClick={handleFecharMenuNotificacoes}
+            >
+              <Typography variant="body2" noWrap>
+                <strong>{alerta.processo.preso.nome_completo.split(' ')[0]}</strong>: {tiposDeEvento[alerta.tipo_evento]} em {formatarData(alerta.data_evento)}
+              </Typography>
+            </MenuItem>
+          ))
+        )}
+        <Divider />
+        <MenuItem component={RouterLink} to="/alertas" onClick={handleFecharMenuNotificacoes}>
+          Ver todos os alertas
+        </MenuItem>
       </Menu>
 
       {/* Menu de Configurações */}
@@ -174,7 +233,22 @@ const fazerLogout = () => {
         open={Boolean(anchorElConfig)}
         onClose={handleFecharMenuConfig}
       >
-        <MenuItem onClick={handleFecharMenuConfig}>Preferências</MenuItem>
+        <MenuItem 
+          onClick={(e) => {
+            // Impede o menu de fechar, mas aciona o toggle se
+            // o usuário não clicar *exatamente* no switch
+            toggleTema();
+          }}
+        >
+          <ListItemText primary="Modo Escuro" />
+          <Switch
+            edge="end"
+            checked={modo === 'dark'}
+            onChange={toggleTema}
+            onClick={(e) => e.stopPropagation()} // Impede o clique duplo
+          />
+        </MenuItem>
+        
         <MenuItem component={RouterLink} to="/ajuda" onClick={handleFecharMenuConfig}>
           Ajuda
         </MenuItem>

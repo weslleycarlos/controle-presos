@@ -25,8 +25,9 @@ class User(Base):
     cpf = Column(String(11), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
-    role = Column(String(50), nullable=True, default="advogado") # Ex: 'advogado', 'admin'
+    role = Column(String(50), nullable=True, default="admin")
     is_active = Column(Boolean, default=True)
+    preferencia_tema = Column(String(10), default="light")
 
 class TipoEventoEnum(str, enum.Enum):
     audiencia = "audiencia"

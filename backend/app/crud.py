@@ -190,6 +190,10 @@ def update_user_profile(db: Session, db_user: models.User, user_in: schemas.User
         if existing_user:
             raise HTTPException(status_code=400, detail="Email já cadastrado por outro usuário.")
         db_user.email = user_in.email
+    if user_in.preferencia_tema is not None:
+        if user_in.preferencia_tema not in ["light", "dark"]:
+            raise HTTPException(status_code=400, detail="Tema inválido. Use 'light' ou 'dark'.")
+        db_user.preferencia_tema = user_in.preferencia_tema    
     
     db.commit()
     db.refresh(db_user)

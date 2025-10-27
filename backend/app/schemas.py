@@ -11,7 +11,8 @@ class UserBase(BaseModel):
     nome_completo: str
     cpf: str
     email: Optional[EmailStr] = None
-    role: Optional[str] = "advogado"
+    role: Optional[str] = "admin"
+    preferencia_tema: Optional[str] = "light"
 
 class UserCreate(UserBase):
     password: str # A senha em texto puro, apenas na criação
@@ -25,6 +26,7 @@ class UserUpdate(BaseModel):
     """Schema para o usuário atualizar seu próprio perfil."""
     nome_completo: Optional[str] = None
     email: Optional[EmailStr] = None
+    preferencia_tema: Optional[str] = None
 
 class PasswordChange(BaseModel):
     """Schema para mudança de senha."""

@@ -255,24 +255,28 @@ def start_scheduler():
 @app.get("/api/alertas/ativos", response_model=List[schemas.EventoAlerta], tags=["Alertas"])
 def get_alertas_ativos(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # Protegido
+    current_user: models.User = Depends(get_current_user), # Protegido
+    limit: Optional[int] = None # <-- 1. ADICIONE ESTE PARÂMETRO
 ):
     """
     Retorna todos os eventos que foram "disparados" e ainda não venceram.
     """
     agora = datetime.now(timezone.utc)
     
-    alertas = db.query(models.Evento).options(
-        # Eager Loading: Força o SQLAlchemy a buscar os dados relacionados
-        # em uma única query (Evento -> Processo -> Preso)
+    query = db.query(models.Evento).options(
         joinedload(models.Evento.processo).joinedload(models.Processo.preso)
     ).filter(
         models.Evento.alerta_status == models.AlertaStatusEnum.disparado,
-        models.Evento.data_evento > agora # Não mostra alertas que já passaram
+        models.Evento.data_evento > agora
     ).order_by(
-        models.Evento.data_evento.asc() # Do mais urgente para o menos
-    ).all()
+        models.Evento.data_evento.asc()
+    )
     
+    # --- 2. APLIQUE O LIMITE SE ELE FOR FORNECIDO ---
+    if limit:
+        query = query.limit(limit)
+    
+    alertas = query.all()
     return alertas
 
 # --- Novo Schema para o request ---
