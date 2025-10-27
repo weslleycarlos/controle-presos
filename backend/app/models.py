@@ -23,6 +23,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome_completo = Column(String(255), nullable=False)
     cpf = Column(String(11), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(String(50), nullable=True, default="advogado") # Ex: 'advogado', 'admin'
     is_active = Column(Boolean, default=True)

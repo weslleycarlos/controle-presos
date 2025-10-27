@@ -7,6 +7,8 @@ import { Layout } from './componentes/Layout';
 import { PaginaCadastro } from '../paginas/PaginaCadastro'; 
 import { PaginaDetalhes } from '../paginas/PaginaDetalhes';
 import { PaginaAlertas } from '../paginas/PaginaAlertas';
+import { PaginaAjuda } from '../paginas/PaginaAjuda';
+import { PaginaPerfil } from '../paginas/PaginaPerfil';
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
 
@@ -41,7 +43,9 @@ const router = createBrowserRouter([
       { index: true, element: <PaginaDashboard /> },
       { path: 'cadastro', element: <PaginaCadastro /> },
       { path: 'preso/:presoId', element: <PaginaDetalhes /> },
-      { path: 'alertas', element: <PaginaAlertas /> }
+      { path: 'alertas', element: <PaginaAlertas /> },
+      { path: 'ajuda', element: <PaginaAjuda /> },
+      { path: 'perfil', element: <PaginaPerfil /> }
     ]
   },
 ]);

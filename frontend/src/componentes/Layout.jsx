@@ -175,7 +175,9 @@ const fazerLogout = () => {
         onClose={handleFecharMenuConfig}
       >
         <MenuItem onClick={handleFecharMenuConfig}>Preferências</MenuItem>
-        <MenuItem onClick={handleFecharMenuConfig}>Ajuda</MenuItem>
+        <MenuItem component={RouterLink} to="/ajuda" onClick={handleFecharMenuConfig}>
+          Ajuda
+        </MenuItem>
       </Menu>
 
       {/* Menu do Usuário (Avatar) */}
@@ -184,7 +186,9 @@ const fazerLogout = () => {
         open={Boolean(anchorElUsuario)}
         onClose={handleFecharMenuUsuario}
       >
-        <MenuItem onClick={handleFecharMenuUsuario}>Meu Perfil</MenuItem>
+        <MenuItem component={RouterLink} to="/perfil" onClick={handleFecharMenuUsuario}>
+          Meu Perfil
+        </MenuItem>
         <Divider />
         <MenuItem onClick={fazerLogout} sx={{ color: 'error.main' }}>
           <ListItemIcon sx={{ color: 'error.main' }}><LogoutIcon fontSize="small" /></ListItemIcon>

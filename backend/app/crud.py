@@ -1,9 +1,10 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func # para usar func.lower
 from datetime import date
 from typing import Optional
 from . import models, schemas
-from .security import get_password_hash # Importar nossa função de hash
+from .security import get_password_hash, verify_password
 
 # --- CRUD de Preso ---
 
@@ -178,3 +179,24 @@ def delete_preso(db: Session, preso_id: int):
     db.delete(db_preso)
     db.commit()
     return db_preso # Retorna o objeto deletado (para confirmação)
+
+def update_user_profile(db: Session, db_user: models.User, user_in: schemas.UserUpdate):
+    """Atualiza o nome ou email do usuário."""
+    if user_in.nome_completo is not None:
+        db_user.nome_completo = user_in.nome_completo
+    if user_in.email is not None:
+        # Verifica se o email já está em uso por OUTRO usuário
+        existing_user = db.query(models.User).filter(models.User.email == user_in.email, models.User.id != db_user.id).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email já cadastrado por outro usuário.")
+        db_user.email = user_in.email
+    
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def update_user_password(db: Session, db_user: models.User, nova_senha: str):
+    """Atualiza o hash da senha do usuário."""
+    db_user.hashed_password = get_password_hash(nova_senha)
+    db.commit()
+    return db_user

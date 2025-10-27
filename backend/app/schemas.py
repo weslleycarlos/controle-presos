@@ -10,6 +10,7 @@ from .models import TipoEventoEnum, AlertaStatusEnum # Importa nossos Enums
 class UserBase(BaseModel):
     nome_completo: str
     cpf: str
+    email: Optional[EmailStr] = None
     role: Optional[str] = "advogado"
 
 class UserCreate(UserBase):
@@ -18,8 +19,17 @@ class UserCreate(UserBase):
 class User(UserBase):
     id: int
     is_active: bool
-
     model_config = ConfigDict(from_attributes=True)
+
+class UserUpdate(BaseModel):
+    """Schema para o usuário atualizar seu próprio perfil."""
+    nome_completo: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+class PasswordChange(BaseModel):
+    """Schema para mudança de senha."""
+    senha_antiga: str
+    nova_senha: str
 
 class Token(BaseModel):
     access_token: str

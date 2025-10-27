@@ -343,3 +343,40 @@ def delete_preso_endpoint(
     if db_preso is None:
         raise HTTPException(status_code=404, detail="Preso não encontrado")
     return db_preso
+
+@app.get("/api/users/me", response_model=schemas.User, tags=["Usuário"])
+def read_users_me(
+    current_user: models.User = Depends(get_current_user)
+):
+    """Retorna os dados do usuário logado."""
+    return current_user
+
+
+@app.put("/api/users/me", response_model=schemas.User, tags=["Usuário"])
+def update_users_me(
+    user_in: schemas.UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Atualiza o nome e/ou email do usuário logado."""
+    return crud.update_user_profile(db=db, db_user=current_user, user_in=user_in)
+
+
+@app.post("/api/users/me/change-password", tags=["Usuário"])
+def change_users_me_password(
+    password_data: schemas.PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Muda a senha do usuário logado."""
+    # 1. Verifica se a senha antiga está correta
+    if not verify_password(password_data.senha_antiga, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Senha antiga incorreta.")
+    
+    # 2. (Opcional) Verifica a força da nova senha
+    if len(password_data.nova_senha) < 8:
+         raise HTTPException(status_code=400, detail="Nova senha deve ter pelo menos 8 caracteres.")
+    
+    # 3. Atualiza a senha
+    crud.update_user_password(db=db, db_user=current_user, nova_senha=password_data.nova_senha)
+    return {"message": "Senha atualizada com sucesso."}
