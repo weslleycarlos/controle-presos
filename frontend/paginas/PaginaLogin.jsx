@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios'; // Importamos o Axios
+import { useAuth } from '../AuthContext';
 
 import { 
   Box, Button, TextField, Typography, Container, Link, 
@@ -17,47 +18,29 @@ export function PaginaLogin() {
   const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState(''); // Estado para guardar mensagens de erro
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // <-- 3. INICIE O HOOK
+  const { login } = useAuth(); // <-- 4. PEGUE A FUNÇÃO DE LOGIN
 
   const fazerLogin = async (e) => {
     e.preventDefault();
-    setErro(''); // Limpa erros antigos
+    setErro(''); 
 
-    // O FastAPI espera dados de formulário (FormData) para o OAuth2
     const params = new URLSearchParams();
-    params.append('username', cpf); // Nosso CPF vai no campo 'username'
+    params.append('username', cpf);
     params.append('password', senha);
 
     try {
-      // 1. Pega o token
       const response = await axios.post(`${API_URL}/api/token`, params, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
+
       const token = response.data.access_token;
-      localStorage.setItem('authToken', token);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      // --- ATUALIZAÇÃO ---
-      // 2. Busca os dados do usuário (incluindo o tema)
-      try {
-        const userResponse = await axios.get(`${API_URL}/api/users/me`);
-        const temaSalvo = userResponse.data.preferencia_tema || 'light';
-        
-        // 3. Salva a preferência de tema no localStorage ANTES de recarregar
-        localStorage.setItem('tema', temaSalvo);
-
-      } catch (userError) {
-        console.error("Falha ao buscar perfil do usuário no login:", userError);
-        localStorage.setItem('tema', 'light'); // Padrão se falhar
-      }
       
-      // 4. Redireciona (como corrigimos antes)
-      window.location.href = '/';
-
+      // --- 5. ATUALIZE A LÓGICA DE LOGIN ---
+      login(token); // Passa o token para o Contexto
+      navigate('/'); // Navega para o Dashboard
+      
     } catch (error) {
-      // Se o backend retornar 401 (Não Autorizado) ou outro erro
       if (error.response && error.response.data && error.response.data.detail) {
         setErro(error.response.data.detail);
       } else {

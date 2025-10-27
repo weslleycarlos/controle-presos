@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../AuthContext';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useTema } from '../TemaContext';
 import { Switch } from '@mui/material';
 import { Outlet, Link as RouterLink } from 'react-router-dom';
@@ -32,6 +34,7 @@ const tiposDeEvento = {
 };
 
 export function Layout() {
+  const { usuario, logout } = useAuth();
   const { modo, toggleTema } = useTema();
   const [mobileOpen, setMobileOpen] = useState(false); // Estado para menu mobile
 
@@ -96,10 +99,7 @@ export function Layout() {
   };
 
 const fazerLogout = () => {
-    console.log("Fazendo logout...");
-    localStorage.removeItem('authToken');
-    delete axios.defaults.headers.common['Authorization'];
-    window.location.href = '/login'; // Força o recarregamento
+    logout(); // Chama a função do Contexto
   };
 
   // Definição do conteúdo do menu
@@ -128,6 +128,14 @@ const fazerLogout = () => {
             <ListItemText primary="Alertas de Prazo" />
           </ListItemButton>
         </ListItem>
+        {usuario && usuario.role === 'admin' && (
+          <ListItem disablePadding>
+            <ListItemButton component={RouterLink} to="/admin/usuarios">
+              <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+              <ListItemText primary="Gerenciar Usuários" />
+            </ListItemButton>
+          </ListItem>
+        )}
       </List>
       <Divider />
       
