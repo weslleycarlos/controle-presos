@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios'; // Importamos o Axios
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../src/AuthContext';
 
 import { 
   Box, Button, TextField, Typography, Container, Link, 

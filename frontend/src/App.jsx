@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 
@@ -12,7 +12,6 @@ import { PaginaAlertas } from '../paginas/PaginaAlertas';
 import { PaginaAjuda } from '../paginas/PaginaAjuda';
 import { PaginaPerfil } from '../paginas/PaginaPerfil';
 import { PaginaAdminUsuarios } from '../paginas/PaginaAdminUsuarios';
-
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
 

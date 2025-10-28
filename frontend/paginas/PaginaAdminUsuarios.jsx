@@ -12,7 +12,7 @@ const initialState = {
   cpf: '',
   email: '',
   password: '',
-  role: 'advogado' // Padrão
+  role: 'user' // Padrão
 };
 
 export function PaginaAdminUsuarios() {
@@ -122,7 +122,7 @@ export function PaginaAdminUsuarios() {
                 value={form.role}
                 onChange={handleChange}
               >
-                <MenuItem value="advogado">Advogado (Padrão)</MenuItem>
+                <MenuItem value="user">Usuário (Padrão)</MenuItem>
                 <MenuItem value="admin">Administrador</MenuItem>
               </Select>
             </FormControl>
