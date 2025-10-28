@@ -19,6 +19,8 @@ def create_user(db: Session, user: schemas.UserCreate):
     db_user = models.User(
         nome_completo=user.nome_completo,
         cpf=user.cpf,
+        email=user.email, 
+        preferencia_tema=user.preferencia_tema, 
         hashed_password=hashed_password,
         role=user.role
     )
@@ -139,6 +141,19 @@ def create_preso_completo(db: Session, cadastro: schemas.PresoCadastroCompleto):
     db.refresh(db_preso)
     return db_preso
 
+def update_user_by_admin(db: Session, user_id: int, user_in: schemas.UserUpdate):
+    """
+    Permite que um admin atualize os dados de outro usuário.
+    (Nota: Reutiliza o schema UserUpdate)
+    """
+    db_user = get_user(db, user_id=user_id) # Reutiliza a get_user que já temos
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Reutiliza a lógica de atualização que já temos
+    # (O crud.update_user_profile já lida com nome, email e tema)
+    return update_user_profile(db=db, db_user=db_user, user_in=user_in)
+
 def update_preso(db: Session, preso_id: int, preso_update: schemas.PresoCreate):
     """Atualiza os dados de um preso."""
     db_preso = db.query(models.Preso).filter(models.Preso.id == preso_id).first()
@@ -204,3 +219,7 @@ def update_user_password(db: Session, db_user: models.User, nova_senha: str):
     db_user.hashed_password = get_password_hash(nova_senha)
     db.commit()
     return db_user
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os usuários."""
+    return db.query(models.User).offset(skip).limit(limit).all()

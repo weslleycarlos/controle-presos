@@ -137,3 +137,7 @@ class EventoAlerta(BaseModel):
     processo: ProcessoSimplesParaAlerta # Aninha o ProcessoSimples
 
     model_config = ConfigDict(from_attributes=True)
+
+# --- NOVO SCHEMA PARA ADMIN RESETAR SENHA ---
+class AdminPasswordReset(BaseModel):
+    nova_senha: str

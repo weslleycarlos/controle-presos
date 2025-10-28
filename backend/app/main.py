@@ -401,3 +401,66 @@ def change_users_me_password(
     # 3. Atualiza a senha
     crud.update_user_password(db=db, db_user=current_user, nova_senha=password_data.nova_senha)
     return {"message": "Senha atualizada com sucesso."}
+
+# --- NOVO ENDPOINT DE LISTAR USUÁRIOS ---
+@app.get("/api/users/", response_model=List[schemas.User], tags=["Usuário"])
+def read_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(get_current_admin_user) # Protegido
+):
+    """
+    Retorna uma lista de todos os usuários. (Apenas Admins)
+    """
+    users = crud.get_users(db, skip=skip, limit=limit)
+    return users
+
+
+# --- NOVO ENDPOINT DE RESET DE SENHA (ADMIN) ---
+@app.post("/api/users/{user_id}/reset-password", tags=["Usuário"])
+def admin_reset_user_password(
+    user_id: int,
+    password_data: schemas.AdminPasswordReset,
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(get_current_admin_user) # Protegido
+):
+    """
+    Permite que um admin defina uma nova senha para qualquer usuário.
+    """
+    # 1. Encontra o usuário-alvo
+    db_user = crud.get_user(db, user_id=user_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # 2. (Opcional) Impede um admin de resetar a própria senha por aqui
+    if db_user.id == admin_user.id:
+        raise HTTPException(status_code=400, detail="Admin não pode resetar a própria senha por este endpoint. Use /users/me/change-password.")
+        
+    # 3. Verifica a força da nova senha
+    if len(password_data.nova_senha) < 8:
+         raise HTTPException(status_code=400, detail="Nova senha deve ter pelo menos 8 caracteres.")
+    
+    # 4. Atualiza a senha (reutilizando nossa função de crud)
+    crud.update_user_password(db=db, db_user=db_user, nova_senha=password_data.nova_senha)
+    return {"message": f"Senha do usuário '{db_user.nome_completo}' atualizada com sucesso."}
+
+# --- NOVO ENDPOINT DE EDIÇÃO (ADMIN) ---
+@app.put("/api/users/{user_id}", response_model=schemas.User, tags=["Usuário"])
+def update_user_by_admin_endpoint(
+    user_id: int,
+    user_in: schemas.UserUpdate, # O schema só permite mudar nome, email e tema
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(get_current_admin_user) # Protegido
+):
+    """
+    Permite que um admin atualize nome, email ou tema de um usuário.
+    """
+    try:
+        updated_user = crud.update_user_by_admin(db, user_id=user_id, user_in=user_in)
+        return updated_user
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        # Pega o erro de email duplicado do crud.update_user_profile
+        raise HTTPException(status_code=400, detail=str(e))
