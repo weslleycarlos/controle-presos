@@ -64,7 +64,7 @@ export function PaginaPerfil() {
     }
     setIsSavingPass(true);
     try {
-      await axios.post(`${API_URL}/api/users/me/change-password`, {
+      await axios.put(`${API_URL}/api/users/me/password`, {
         senha_antiga: passForm.senha_antiga,
         nova_senha: passForm.nova_senha,
       });

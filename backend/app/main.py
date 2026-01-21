@@ -8,9 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import timedelta, datetime, timezone
-from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token # <-- Adicione decode_access_token
-from . import crud, models, schemas
-from .database import SessionLocal, engine, get_db
+from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Esta linha é crucial! Ela cria as tabelas no seu banco de dados
@@ -166,7 +164,11 @@ def search_presos_endpoint( # Mudei o nome da função para evitar conflito
     return presos
 
 @app.get("/api/presos/{preso_id}", response_model=schemas.PresoDetalhe, tags=["Presos"])
-def read_preso_details(preso_id: int, db: Session = Depends(get_db)):
+def read_preso_details(
+    preso_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     # Critério de sucesso: "...vê todas as informações principais"
     db_preso = crud.get_preso(db, preso_id=preso_id)
     if db_preso is None:
@@ -177,7 +179,10 @@ def read_preso_details(preso_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/presos/{preso_id}/processos/", response_model=schemas.Processo, tags=["Processos"])
 def create_processo_for_preso(
-    preso_id: int, processo: schemas.ProcessoCreate, db: Session = Depends(get_db)
+    preso_id: int,
+    processo: schemas.ProcessoCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     # (Poderia checar se o preso_id existe primeiro, mas o FK do banco já vai barrar)
     return crud.create_processo(db=db, processo=processo, preso_id=preso_id)
@@ -383,7 +388,7 @@ def update_users_me(
     return crud.update_user_profile(db=db, db_user=current_user, user_in=user_in)
 
 
-@app.post("/api/users/me/change-password", tags=["Usuário"])
+@app.put("/api/users/me/password", tags=["Usuário"])
 def change_users_me_password(
     password_data: schemas.PasswordChange,
     db: Session = Depends(get_db),

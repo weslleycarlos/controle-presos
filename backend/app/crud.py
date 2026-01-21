@@ -90,7 +90,7 @@ def create_preso(db: Session, preso: schemas.PresoCreate):
 # --- CRUD de Processo ---
 
 def create_processo(db: Session, processo: schemas.ProcessoCreate, preso_id: int):
-    db_processo = models.Processo(**processo.dict(), preso_id=preso_id)
+    db_processo = models.Processo(**processo.model_dump(), preso_id=preso_id)
     db.add(db_processo)
     db.commit()
     db.refresh(db_processo)
@@ -99,7 +99,7 @@ def create_processo(db: Session, processo: schemas.ProcessoCreate, preso_id: int
 # --- CRUD de Evento ---
 
 def create_evento(db: Session, evento: schemas.EventoCreate, processo_id: int):
-    db_evento = models.Evento(**evento.dict(), processo_id=processo_id)
+    db_evento = models.Evento(**evento.model_dump(), processo_id=processo_id)
     db.add(db_evento)
     db.commit()
     db.refresh(db_evento)

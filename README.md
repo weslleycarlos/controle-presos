@@ -6,10 +6,27 @@ Sistema web para acompanhamento de presos, status processual e alertas automáti
 
 ## Tecnologias Utilizadas
 
-* **Backend:** Python 3, FastAPI, SQLAlchemy, PostgreSQL (via Supabase), APScheduler (para alertas).
-* **Frontend:** React (com Vite), Material-UI (MUI), Axios, React Router.
-* **Banco de Dados:** PostgreSQL (produção via Supabase), SQLite (desenvolvimento local).
-* **Autenticação:** JWT (Tokens).
+* **Backend:** Python 3.10+, FastAPI, SQLAlchemy, PostgreSQL (via Supabase), SQLite (dev), APScheduler (para alertas)
+* **Frontend:** React 19, Vite, Material-UI v7, Axios, React Router v7
+* **Banco de Dados:** PostgreSQL (produção via Supabase), SQLite (desenvolvimento local)
+* **Autenticação:** JWT (Tokens) com OAuth2 Bearer, bcrypt para senhas
+
+## Arquitetura
+
+### Backend
+- API RESTful com FastAPI
+- Autenticação JWT com controle de acesso baseado em roles (admin/user)
+- Suporte híbrido para PostgreSQL (produção) e SQLite (desenvolvimento)
+- Relacionamentos em cascata: User → Preso → Processo → Evento
+- Background scheduler para alertas automáticos
+
+### Frontend
+- Aplicação SPA com React Router v7
+- Context API para gerenciamento de estado (Auth + Tema)
+- Tema claro/escuro persistido no backend
+- Componentes Material-UI responsivos
+
+**Para desenvolvedores AI/LLM:** Consulte [.github/copilot-instructions.md](.github/copilot-instructions.md) para guia completo de desenvolvimento.
 
 ## Configuração do Ambiente Local
 
@@ -40,22 +57,31 @@ Sistema web para acompanhamento de presos, status processual e alertas automáti
     ```
 4.  **Configure o Banco de Dados:**
     * Crie um arquivo `.env` na pasta `backend/`.
-    * Para usar **SQLite** (padrão local), adicione a linha:
-      ```
+    * Para usar **SQLite** (padrão local), adicione:
+      ```env
       DATABASE_URL="sqlite:///./local.db"
+      SECRET_KEY="sua-chave-secreta-aqui-minimo-32-caracteres"
       ```
-    * Para usar **PostgreSQL/Supabase**, adicione a URL de conexão fornecida:
-      ```
+    * Para usar **PostgreSQL/Supabase**, use:
+      ```env
       DATABASE_URL="postgresql://USUARIO:SENHA@HOST:PORTA/NOME_BANCO"
+      SECRET_KEY="sua-chave-secreta-aqui-minimo-32-caracteres"
       ```
-5.  **Configure a Chave Secreta JWT:**
-    * Edite o arquivo `backend/app/security.py`.
-    * Substitua `"SUA_CHAVE_SECRETA_MUITO_FORTE_AQUI"` por uma chave secreta segura. (Para deploy, use variáveis de ambiente).
+    * ⚠️ **IMPORTANTE:** Nunca commite o arquivo `.env` no Git!
+
+5.  **Crie o primeiro usuário admin:**
+    ```bash
+    python create_first_admin.py
+    ```
+    Siga as instruções para definir CPF e senha do administrador.
+
 6.  **Rode o servidor:**
     ```bash
     uvicorn app.main:app --reload
     ```
-    O backend estará rodando em `http://127.0.0.1:8000`. A documentação da API estará em `http://127.0.0.1:8000/docs`.
+    O backend estará rodando em `http://127.0.0.1:8000`.
+    
+    Documentação interativa da API: `http://127.0.0.1:8000/docs`
 
 ### Frontend
 
@@ -67,7 +93,14 @@ Sistema web para acompanhamento de presos, status processual e alertas automáti
     ```bash
     npm install
     ```
-3.  **Rode o servidor de desenvolvimento:**
+3.  **(Opcional) Configure a URL da API:**
+    * Crie um arquivo `.env.local` na pasta `frontend/`:
+      ```env
+      VITE_API_URL=http://127.0.0.1:8000
+      ```
+    * Se não configurar, o padrão será `http://127.0.0.1:8000`
+
+4.  **Rode o servidor de desenvolvimento:**
     ```bash
     npm run dev
     ```
@@ -75,8 +108,49 @@ Sistema web para acompanhamento de presos, status processual e alertas automáti
 
 ## Deploy
 
-* **Backend:** Pode ser hospedado em serviços como Heroku, Render, Fly.io, ou servidores VPS. Lembre-se de configurar as variáveis de ambiente `DATABASE_URL` e `SECRET_KEY`.
-* **Frontend:** Rode `npm run build` para gerar a pasta `dist/`. O conteúdo desta pasta pode ser hospedado em serviços de hospedagem estática como Vercel, Netlify, GitHub Pages, ou junto com o backend.
+* **Backend:** Pode ser hospedado em serviços como Railway, Render, Fly.io, ou servidores VPS. 
+  - Configure as variáveis de ambiente: `DATABASE_URL`, `SECRET_KEY`, `PORT`
+  - O backend usa a variável `$PORT` para Railway/Render
+* **Frontend:** 
+  - Rode `npm run build` para gerar a pasta `dist/`
+  - Hospede em Vercel, Netlify, GitHub Pages, ou servindo junto com o backend
+  - Configure a variável `VITE_API_URL` para apontar para o backend em produção
+
+## Endpoints Principais da API
+
+### Autenticação
+- `POST /api/token` - Login (retorna JWT)
+- `POST /api/users/` - Criar usuário (apenas admin)
+- `GET /api/users/me` - Dados do usuário logado
+- `PUT /api/users/me` - Atualizar perfil
+- `PUT /api/users/me/password` - Alterar senha
+
+### Presos e Processos
+- `POST /api/cadastro-completo` - Cadastro completo (preso + processos)
+- `GET /api/presos/search/` - Buscar presos (com filtros)
+- `GET /api/presos/{id}` - Detalhes do preso
+- `PUT /api/presos/{id}` - Atualizar preso
+- `DELETE /api/presos/{id}` - Deletar preso
+
+### Eventos e Alertas
+- `POST /api/processos/{id}/eventos/` - Criar evento
+- `GET /api/alertas/ativos` - Listar alertas ativos
+- `PATCH /api/eventos/{id}/status` - Atualizar status do evento
+
+Todos os endpoints (exceto `/api/token`) requerem autenticação via `Authorization: Bearer {token}`.
+
+Documentação completa: `http://localhost:8000/docs`
+
+## Correções e Melhorias
+
+Veja [CORRECOES.md](CORRECOES.md) para o histórico completo de correções aplicadas ao projeto.
+
+### Últimas Atualizações (21/01/2026)
+- ✅ Padronizado uso do Pydantic v2 (`.model_dump()`)
+- ✅ Removidos imports duplicados no backend
+- ✅ Corrigidos imports faltantes no frontend
+- ✅ Endpoint de senha alterado para `PUT /api/users/me/password`
+- ✅ Adicionada autenticação em endpoints críticos
 
 ## Contribuição
 

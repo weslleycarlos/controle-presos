@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
 import axios from 'axios';
+import { Box, CircularProgress } from '@mui/material';
 import { useAuth } from './AuthContext';
 
 import { PaginaLogin } from '../paginas/PaginaLogin';
