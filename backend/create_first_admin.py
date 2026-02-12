@@ -3,6 +3,7 @@ import os
 from getpass import getpass
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 # Carrega a variável DATABASE_URL do arquivo .env
@@ -24,17 +25,35 @@ if not DATABASE_URL:
 if DATABASE_URL.startswith("sqlite"):
     DATABASE_URL = "sqlite:///./local.db" 
     print(f"Usando banco de dados local: {DATABASE_URL}")
+elif DATABASE_URL.startswith("postgresql") and "sslmode=" not in DATABASE_URL:
+    separador = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL = f"{DATABASE_URL}{separador}sslmode=require"
+    print("Adicionando sslmode=require automaticamente para PostgreSQL.")
 
 try:
-    local_engine = create_engine(DATABASE_URL)
+    connect_args = {}
+    if DATABASE_URL.startswith("postgresql"):
+        connect_args = {"connect_timeout": 10}
+
+    local_engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=local_engine)
+
+    # Testa conexão imediatamente para evitar "travamento" silencioso
+    with local_engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        conn.commit()
+    print("Conexão com banco validada com sucesso.")
     
     # Cria as tabelas (importante para a primeira execução)
     Base.metadata.create_all(bind=local_engine)
     print("Tabelas verificadas/criadas.")
 except Exception as e:
     print(f"Erro ao conectar ao banco: {e}")
-    print("Verifique se o banco está acessível e a DATABASE_URL está correta no .env")
+    print("Verifique se o banco está acessível, se a DATABASE_URL está correta e se o SSL está habilitado (sslmode=require).")
     exit()
 
 
