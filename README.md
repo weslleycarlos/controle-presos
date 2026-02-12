@@ -166,7 +166,10 @@ Observação: para funcionar de fato, configure URLs/tokens das integrações no
 - Configure o projeto com Root Directory em `backend`.
 - O projeto já inclui `backend/vercel.json` e entrypoint serverless em `backend/api/index.py`.
 - Em ambiente Vercel, o scheduler (`APScheduler`) é desativado automaticamente; use um serviço externo de cron/webhook para disparar rotinas periódicas.
-- Configure `CRON_SECRET` no ambiente e use Vercel Cron chamando `POST /api/jobs/check-alertas` com header `Authorization: Bearer <CRON_SECRET>` (ou `X-Cron-Secret`).
+- Configure `CRON_SECRET` no ambiente.
+- Para cron com header: use `POST /api/jobs/check-alertas` com `Authorization: Bearer <CRON_SECRET>` (ou `X-Cron-Secret`).
+- Para Vercel Cron sem header customizado: use `/api/jobs/check-alertas?secret=<CRON_SECRET>`.
+- No `backend/vercel.json`, substitua `ALTERE_PARA_UM_SECRETO_FORTE` pelo mesmo valor definido em `CRON_SECRET` antes do deploy.
 
 ## Próximos passos
 

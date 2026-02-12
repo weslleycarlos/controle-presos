@@ -45,7 +45,10 @@ def _validar_cron_secret(request: Request):
     if not token:
         token = request.headers.get("X-Cron-Secret", "").strip()
 
-    if not token or token != cron_secret:
+    if not token:
+        token = request.query_params.get("secret", "").strip()
+
+    if not token or not secrets.compare_digest(token, cron_secret):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autorizado para execução do job.")
 
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
