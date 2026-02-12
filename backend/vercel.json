@@ -2,7 +2,7 @@
   "version": 2,
   "crons": [
     {
-      "path": "/api/jobs/check-alertas?secret=5yAZW14J,&aE",
+      "path": "/api/jobs/check-alertas?secret=RmCNH151is3Z",
       "schedule": "0 11 * * *"
     }
   ],
