@@ -28,6 +28,26 @@ AUTH_COOKIE_NAME = "access_token"
 CSRF_COOKIE_NAME = "csrf_token"
 IS_PRODUCTION = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() in {"production", "prod"}
 
+
+def _validar_cron_secret(request: Request):
+    cron_secret = os.getenv("CRON_SECRET")
+    if not cron_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CRON_SECRET não configurado no ambiente."
+        )
+
+    auth_header = request.headers.get("Authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "", 1).strip()
+
+    if not token:
+        token = request.headers.get("X-Cron-Secret", "").strip()
+
+    if not token or token != cron_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autorizado para execução do job.")
+
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
 # Lista de "origens" (endereços) que podem acessar este backend
 origins = [
@@ -356,49 +376,19 @@ def check_alertas_job():
     logger.info("Rodando job de verificação de alertas")
     db: Session = SessionLocal() # O Job precisa criar sua própria sessão de DB
     try:
-        eventos_para_alertar = _sincronizar_alertas_status(db)
-
-        if not eventos_para_alertar:
+        resultado = executar_job_alertas(db)
+        if resultado["alertas_disparados"] == 0:
             logger.info("Nenhum novo alerta para disparar")
             return
 
-        logger.info("Job finalizado. %s alertas atualizados para 'disparado'.", len(eventos_para_alertar))
-
-        usuarios_para_notificar = crud.get_users_for_email_alerts(db)
-        destinatarios = [usuario.email for usuario in usuarios_para_notificar if usuario.email]
-        if destinatarios:
-            total_alertas = len(eventos_para_alertar)
-            alertas_preview = []
-            for evento in eventos_para_alertar[:20]:
-                numero_processo = evento.processo.numero_processo if evento.processo else "-"
-                nome_preso = "-"
-                if evento.processo and evento.processo.preso:
-                    nome_preso = evento.processo.preso.nome_completo
-                data_evento = evento.data_evento.strftime("%d/%m/%Y %H:%M")
-                alertas_preview.append(
-                    f"- {data_evento} | {evento.tipo_evento.value} | Proc. {numero_processo} | {nome_preso}"
-                )
-
-            mensagem = [
-                "Novos alertas processuais foram disparados no Sistema de Controle de Presos.",
-                "",
-                f"Total de alertas: {total_alertas}",
-                "",
-                "Prévia (até 20):",
-                *alertas_preview,
-                "",
-                "Acesse o sistema para ver todos os detalhes.",
-            ]
-
-            enviado = send_email_alerts(
-                recipients=destinatarios,
-                subject=f"[Controle de Presos] {total_alertas} novo(s) alerta(s) processual(is)",
-                body="\n".join(mensagem),
-            )
-            if enviado:
-                logger.info("E-mail de alertas enviado para %s usuário(s)", len(destinatarios))
-            else:
-                logger.warning("E-mail de alertas não foi enviado; verifique configuração SMTP")
+        logger.info(
+            "Job finalizado. %s alertas atualizados para 'disparado'.",
+            resultado["alertas_disparados"]
+        )
+        if resultado["email_status"] == "enviado":
+            logger.info("E-mail de alertas enviado para %s usuário(s)", resultado["emails_enviados"])
+        elif resultado["email_status"] == "falha_envio":
+            logger.warning("E-mail de alertas não foi enviado; verifique configuração SMTP")
 
     except Exception:
         logger.exception("Erro no job de alertas")
@@ -407,11 +397,93 @@ def check_alertas_job():
         db.close()
 
 
+def executar_job_alertas(db: Session) -> dict:
+    eventos_para_alertar = _sincronizar_alertas_status(db)
+
+    if not eventos_para_alertar:
+        return {
+            "alertas_disparados": 0,
+            "emails_enviados": 0,
+            "email_status": "nenhum_alerta",
+        }
+
+    usuarios_para_notificar = crud.get_users_for_email_alerts(db)
+    destinatarios = [usuario.email for usuario in usuarios_para_notificar if usuario.email]
+
+    email_status = "nao_configurado_ou_sem_destinatarios"
+    emails_enviados = 0
+    if destinatarios:
+        total_alertas = len(eventos_para_alertar)
+        alertas_preview = []
+        for evento in eventos_para_alertar[:20]:
+            numero_processo = evento.processo.numero_processo if evento.processo else "-"
+            nome_preso = "-"
+            if evento.processo and evento.processo.preso:
+                nome_preso = evento.processo.preso.nome_completo
+            data_evento = evento.data_evento.strftime("%d/%m/%Y %H:%M")
+            alertas_preview.append(
+                f"- {data_evento} | {evento.tipo_evento.value} | Proc. {numero_processo} | {nome_preso}"
+            )
+
+        mensagem = [
+            "Novos alertas processuais foram disparados no Sistema de Controle de Presos.",
+            "",
+            f"Total de alertas: {total_alertas}",
+            "",
+            "Prévia (até 20):",
+            *alertas_preview,
+            "",
+            "Acesse o sistema para ver todos os detalhes.",
+        ]
+
+        enviado = send_email_alerts(
+            recipients=destinatarios,
+            subject=f"[Controle de Presos] {total_alertas} novo(s) alerta(s) processual(is)",
+            body="\n".join(mensagem),
+        )
+        if enviado:
+            email_status = "enviado"
+            emails_enviados = len(destinatarios)
+        else:
+            email_status = "falha_envio"
+
+    return {
+        "alertas_disparados": len(eventos_para_alertar),
+        "emails_enviados": emails_enviados,
+        "email_status": email_status,
+    }
+
+
+@app.post("/api/jobs/check-alertas", tags=["Jobs"])
+def executar_job_alertas_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _validar_cron_secret(request)
+
+    try:
+        resultado = executar_job_alertas(db)
+        return {
+            "status": "ok",
+            **resultado,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Erro ao executar job de alertas por endpoint")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Falha ao executar job de alertas.")
+
+
 @app.on_event("startup")
 def start_scheduler():
     """
     Inicia o Scheduler quando o FastAPI é iniciado.
     """
+    if os.getenv("VERCEL"):
+        logger.info("Ambiente Vercel detectado: scheduler desativado.")
+        return
+
     scheduler = BackgroundScheduler(timezone="America/Sao_Paulo") # Use o fuso do Brasil
     
     # Roda o job todo dia às 8:00 da manhã

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/jobs/check-alertas",
+      "schedule": "0 11 * * *"
+    }
+  ],
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ]
+}

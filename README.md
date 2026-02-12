@@ -152,10 +152,21 @@ Observação: para funcionar de fato, configure URLs/tokens das integrações no
 - `POST /api/integracoes/processos/consultar`
 - `POST /api/integracoes/cpf/consultar`
 
+### Jobs
+
+- `POST /api/jobs/check-alertas` (protegido por `CRON_SECRET`)
+
 ## Deploy (resumo)
 
 - Backend: configurar `APP_ENV=production`, `DATABASE_URL`, `SECRET_KEY` e variáveis de integração (se usadas).
 - Frontend: configurar `VITE_API_URL` com a URL pública do backend.
+
+### Deploy backend na Vercel
+
+- Configure o projeto com Root Directory em `backend`.
+- O projeto já inclui `backend/vercel.json` e entrypoint serverless em `backend/api/index.py`.
+- Em ambiente Vercel, o scheduler (`APScheduler`) é desativado automaticamente; use um serviço externo de cron/webhook para disparar rotinas periódicas.
+- Configure `CRON_SECRET` no ambiente e use Vercel Cron chamando `POST /api/jobs/check-alertas` com header `Authorization: Bearer <CRON_SECRET>` (ou `X-Cron-Secret`).
 
 ## Próximos passos
 
