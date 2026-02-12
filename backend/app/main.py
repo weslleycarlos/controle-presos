@@ -54,11 +54,19 @@ def _validar_cron_secret(request: Request):
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
 # Lista de "origens" (endereços) que podem acessar este backend
 origins = [
-    "https://controle-presos-front-production.up.railway.app", # Endereço do frontend em produção
-    "http://localhost:5173", # O endereço do seu frontend React (Vite)
+    "https://controle-presos-front-production.up.railway.app", # Endereço do frontend em produção (Railway)
+    "https://controle-presos.vercel.app", # Endereço do frontend em produção (Vercel)
+    "http://localhost:5173", # O endereço do frontend React (Vite)
     "http://localhost",
     "http://127.0.0.1:5173", # Outra forma de acessar o mesmo endereço
 ]
+
+origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if origins_env:
+    extra_origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+    for origin in extra_origins:
+        if origin not in origins:
+            origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,

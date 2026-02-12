@@ -49,6 +49,7 @@ Variáveis principais do backend:
 - `APP_ENV`: `development` ou `production`
 - `DATABASE_URL`: conexão do banco
 - `SECRET_KEY`: chave JWT (mínimo recomendado: 32 caracteres)
+- `CORS_ALLOWED_ORIGINS`: origens extras permitidas no CORS, separadas por vírgula
 - `DATAJUD_API_URL` / `DATAJUD_API_TOKEN`: integração DataJud (opcional)
 - `PJE_API_URL` / `PJE_API_TOKEN`: integração PJe (opcional)
 - `CPF_API_URL` / `CPF_API_TOKEN`: integração para consulta de dados pessoais por CPF (opcional)
