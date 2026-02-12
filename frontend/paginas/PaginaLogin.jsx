@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // Importamos o Axios
+import api from '../src/api';
 import { useAuth } from '../src/AuthContext';
 
 import { 
@@ -9,10 +9,6 @@ import {
 } from '@mui/material';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-
-// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
-// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export function PaginaLogin() {
   const [cpf, setCpf] = useState('');
@@ -30,14 +26,11 @@ export function PaginaLogin() {
     params.append('password', senha);
 
     try {
-      const response = await axios.post(`${API_URL}/api/token`, params, {
+      await api.post('/api/token', params, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-
-      const token = response.data.access_token;
       
-      // --- 5. ATUALIZE A LÓGICA DE LOGIN ---
-      login(token); // Passa o token para o Contexto
+      await login();
       navigate('/'); // Navega para o Dashboard
       
     } catch (error) {

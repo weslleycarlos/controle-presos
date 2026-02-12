@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
@@ -8,13 +9,25 @@ from typing import Optional
 
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+
 # --- Configuração do Token (JWT) ---
-# Esta chave secreta DEVE ser protegida. No deploy, mude para uma variável de ambiente.
-SECRET_KEY = os.getenv("SECRET_KEY", "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc")
-if SECRET_KEY == "cU92tUsAkx8nYlTseA38V4X1rCnV1Ghc":
-    print("="*50)
-    print("AVISO: Usando chave secreta de DEV. Defina a variável de ambiente SECRET_KEY.")
-    print("="*50)
+ENVIRONMENT = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
+IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if IS_PRODUCTION:
+    if not SECRET_KEY or len(SECRET_KEY) < 32:
+        raise RuntimeError(
+            "SECRET_KEY ausente ou fraca para produção. Defina SECRET_KEY com no mínimo 32 caracteres."
+        )
+else:
+    if not SECRET_KEY:
+        SECRET_KEY = "dev-insecure-secret-key-change-me"
+        logger.warning("Usando SECRET_KEY de desenvolvimento. Defina SECRET_KEY no ambiente.")
+    elif len(SECRET_KEY) < 32:
+        logger.warning("SECRET_KEY de desenvolvimento com menos de 32 caracteres.")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8 # 8 horas

@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../src/api';
 import {
   Box, Typography, Paper, Grid, TextField, Button,
-  CircularProgress, Snackbar, Alert
+  CircularProgress, Snackbar, Alert, FormControlLabel, Switch
 } from '@mui/material';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export function PaginaPerfil() {
   const [userForm, setUserForm] = useState({ nome_completo: '', email: '' });
+  const [notificationPrefs, setNotificationPrefs] = useState({ receber_alertas_email: false });
   const [passForm, setPassForm] = useState({ senha_antiga: '', nova_senha: '', confirmar_nova_senha: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingUser, setIsSavingUser] = useState(false);
@@ -19,10 +18,16 @@ export function PaginaPerfil() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/users/me`);
+        const [userResponse, prefsResponse] = await Promise.all([
+          api.get('/api/users/me'),
+          api.get('/api/users/me/notificacoes')
+        ]);
         setUserForm({
-          nome_completo: response.data.nome_completo,
-          email: response.data.email || '' // Usa string vazia se for null
+          nome_completo: userResponse.data.nome_completo,
+          email: userResponse.data.email || '' // Usa string vazia se for null
+        });
+        setNotificationPrefs({
+          receber_alertas_email: Boolean(prefsResponse.data?.receber_alertas_email)
         });
       } catch (error) {
         setSnack({ open: true, message: "Erro ao carregar dados do perfil.", severity: 'error' });
@@ -42,7 +47,8 @@ export function PaginaPerfil() {
     e.preventDefault();
     setIsSavingUser(true);
     try {
-      await axios.put(`${API_URL}/api/users/me`, userForm);
+      await api.put('/api/users/me', userForm);
+      await api.put('/api/users/me/notificacoes', notificationPrefs);
       setSnack({ open: true, message: 'Perfil atualizado com sucesso!', severity: 'success' });
     } catch (error) {
       setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao atualizar perfil.', severity: 'error' });
@@ -64,7 +70,7 @@ export function PaginaPerfil() {
     }
     setIsSavingPass(true);
     try {
-      await axios.put(`${API_URL}/api/users/me/password`, {
+      await api.put('/api/users/me/password', {
         senha_antiga: passForm.senha_antiga,
         nova_senha: passForm.nova_senha,
       });
@@ -85,7 +91,7 @@ export function PaginaPerfil() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: '800', color: '#333', mb: 3 }}>
+      <Typography variant="h4" sx={{ fontWeight: '800', color: 'text.primary', mb: 3 }}>
         Meu Perfil
       </Typography>
 
@@ -112,6 +118,17 @@ export function PaginaPerfil() {
               fullWidth
               required
               margin="normal"
+            />
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={(
+                <Switch
+                  checked={notificationPrefs.receber_alertas_email}
+                  onChange={(e) => setNotificationPrefs({ receber_alertas_email: e.target.checked })}
+                  name="receber_alertas_email"
+                />
+              )}
+              label="Receber alertas por e-mail"
             />
             <Button 
               type="submit" 

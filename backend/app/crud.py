@@ -22,7 +22,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         email=user.email, 
         preferencia_tema=user.preferencia_tema, 
         hashed_password=hashed_password,
-        role=user.role
+        role=user.role or "user"
     )
     db.add(db_user)
     db.commit()
@@ -54,8 +54,8 @@ def search_presos(
     Busca presos por múltiplos critérios.
     Todos os filtros são opcionais.
     """
-    # Começa a query base, já fazendo o JOIN em Processos
-    query = db.query(models.Preso).join(models.Processo).options(
+    # Query base com OUTER JOIN para também incluir presos sem processo
+    query = db.query(models.Preso).outerjoin(models.Processo).options(
         joinedload(models.Preso.processos)
     )
 
@@ -72,8 +72,8 @@ def search_presos(
     if data_prisao:
         query = query.filter(models.Processo.data_prisao == data_prisao)
 
-    # Aplica ordenação, paginação e executa
-    return query.order_by(models.Preso.nome_completo.asc()).offset(skip).limit(limit).all()
+    # Aplica distinct para evitar duplicidade por JOIN, ordenação e paginação
+    return query.distinct(models.Preso.id).order_by(models.Preso.nome_completo.asc()).offset(skip).limit(limit).all()
 
 def create_preso(db: Session, preso: schemas.PresoCreate):
     db_preso = models.Preso(
@@ -223,3 +223,40 @@ def update_user_password(db: Session, db_user: models.User, nova_senha: str):
 def get_users(db: Session, skip: int = 0, limit: int = 100):
     """Lista todos os usuários."""
     return db.query(models.User).offset(skip).limit(limit).all()
+
+
+def get_user_notification_preference(db: Session, user_id: int):
+    return db.query(models.UserNotificationPreference).filter(
+        models.UserNotificationPreference.user_id == user_id
+    ).first()
+
+
+def upsert_user_notification_preference(
+    db: Session,
+    user_id: int,
+    receber_alertas_email: bool
+):
+    db_pref = get_user_notification_preference(db=db, user_id=user_id)
+    if not db_pref:
+        db_pref = models.UserNotificationPreference(
+            user_id=user_id,
+            receber_alertas_email=receber_alertas_email,
+        )
+        db.add(db_pref)
+    else:
+        db_pref.receber_alertas_email = receber_alertas_email
+
+    db.commit()
+    db.refresh(db_pref)
+    return db_pref
+
+
+def get_users_for_email_alerts(db: Session):
+    return db.query(models.User).join(
+        models.UserNotificationPreference,
+        models.UserNotificationPreference.user_id == models.User.id,
+    ).filter(
+        models.User.is_active.is_(True),
+        models.User.email.is_not(None),
+        models.UserNotificationPreference.receber_alertas_email.is_(True),
+    ).all()

@@ -4,8 +4,9 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useTema } from '../TemaContext';
 import { Switch } from '@mui/material';
 import { Outlet, Link as RouterLink } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import { formatarData } from '../util/formatarData';
+import { tiposDeEvento } from '../util/tiposEvento';
 import {
   AppBar, Toolbar, Typography, Box, IconButton, Avatar,
   Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
@@ -15,23 +16,14 @@ import {
 import NotificationsIcon from '@mui/icons-material/Notifications';
 
 // Ícones do Menu
-import GavelIcon from '@mui/icons-material/Gavel';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
-import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNoneOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu'; // Ícone Hamburguer
 
 
 const drawerWidth = 240; // Largura do nosso menu lateral
-
-const tiposDeEvento = {
-  audiencia: "Audiência",
-  reavaliacao_preventiva: "Reavaliação de Prisão",
-  prazo_recurso: "Prazo de Recurso",
-  outro: "Outro"
-};
 
 export function Layout() {
   const { usuario, logout } = useAuth();
@@ -57,7 +49,7 @@ export function Layout() {
   useEffect(() => {
     const fetchContagemAlertas = async () => {
       try {
-        const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/alertas/ativos`);
+        const response = await api.get('/api/alertas/ativos');
         setContagemAlertas(response.data.length);
       } catch (error) {
         console.error("Erro ao buscar contagem de alertas:", error);
@@ -72,7 +64,7 @@ export function Layout() {
     setIsLoadingAlertas(true);
     try {
       // Busca apenas os 5 mais urgentes
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/alertas/ativos?limit=5`);
+      const response = await api.get('/api/alertas/ativos?limit=5');
       setAlertasMenu(response.data);
     } catch (error) {
       console.error("Erro ao buscar prévia de alertas:", error);
@@ -143,7 +135,7 @@ const fazerLogout = () => {
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f6f7f8' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: 'background.default' }}>
       <CssBaseline /> {/* Reseta o CSS padrão (bom para o MUI) */}
       
       {/* 1. O Cabeçalho (AppBar) */}
@@ -152,13 +144,14 @@ const fazerLogout = () => {
         sx={{ 
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
-          backgroundColor: '#ffffff',
-          color: '#333333',
-          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.1)',
+          backgroundColor: 'background.paper',
+          color: 'text.primary',
+          boxShadow: 1,
         }}
       >
         <Toolbar>
           <IconButton
+            aria-label="Abrir menu"
             color="inherit"
             edge="start"
             onClick={handleDrawerToggle}
@@ -167,7 +160,7 @@ const fazerLogout = () => {
             <MenuIcon />
           </IconButton>
           
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: '700', color: '#0A2463', display: { xs: 'none', sm: 'block' } }}>
+          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: '700', color: 'primary.main', display: { xs: 'none', sm: 'block' } }}>
             Controle de Presos
           </Typography>
 
@@ -177,7 +170,7 @@ const fazerLogout = () => {
           <Box>
             {/* Ícone de Sino (Notificações) */}
             <Tooltip title="Notificações">
-            <IconButton color="inherit" onClick={handleAbrirMenuNotificacoes}>
+            <IconButton aria-label="Abrir notificações" color="inherit" onClick={handleAbrirMenuNotificacoes}>
               {/* Badge agora usa a contagem real */}
               <Badge badgeContent={contagemAlertas} color="error">
                 <NotificationsIcon />
@@ -187,14 +180,14 @@ const fazerLogout = () => {
 
             {/* Ícone de Engrenagem (Configurações) */}
             <Tooltip title="Configurações">
-              <IconButton color="inherit" onClick={handleAbrirMenuConfig}>
+              <IconButton aria-label="Abrir configurações" color="inherit" onClick={handleAbrirMenuConfig}>
                 <SettingsOutlinedIcon />
               </IconButton>
             </Tooltip>
             
             {/* Avatar do Usuário */}
             <Tooltip title="Opções do Usuário">
-              <IconButton onClick={handleAbrirMenuUsuario} sx={{ p: 0, ml: 2 }}>
+              <IconButton aria-label="Abrir menu do usuário" onClick={handleAbrirMenuUsuario} sx={{ p: 0, ml: 2 }}>
                 <Avatar sx={{ width: 32, height: 32 }} alt="Usuário" />
               </IconButton>
             </Tooltip>
@@ -336,8 +329,9 @@ const fazerLogout = () => {
             px: 2,
             mt: 'auto', // Joga o rodapé para o fim
             textAlign: 'center',
-            color: '#6c757d',
-            borderTop: '1px solid #e0e0e0',
+            color: 'text.secondary',
+            borderTop: '1px solid',
+            borderColor: 'divider',
             fontSize: '0.9rem'
           }}
         >

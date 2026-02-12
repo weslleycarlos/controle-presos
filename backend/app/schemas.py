@@ -1,7 +1,7 @@
 
 from datetime import date, datetime
-from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, EmailStr
+from typing import List, Optional, Literal, Any
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import TipoEventoEnum, AlertaStatusEnum # Importa nossos Enums
 
@@ -11,11 +11,11 @@ class UserBase(BaseModel):
     nome_completo: str
     cpf: str
     email: Optional[EmailStr] = None
-    role: Optional[str] = "admin"
+    role: Literal["admin", "user"] = "user"
     preferencia_tema: Optional[str] = "light"
 
 class UserCreate(UserBase):
-    password: str # A senha em texto puro, apenas na criação
+    password: str = Field(min_length=8) # A senha em texto puro, apenas na criação
 
 class User(UserBase):
     id: int
@@ -28,10 +28,19 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     preferencia_tema: Optional[str] = None
 
+
+class UserNotificationPreference(BaseModel):
+    receber_alertas_email: bool = False
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserNotificationPreferenceUpdate(BaseModel):
+    receber_alertas_email: bool
+
 class PasswordChange(BaseModel):
     """Schema para mudança de senha."""
     senha_antiga: str
-    nova_senha: str
+    nova_senha: str = Field(min_length=8)
 
 class Token(BaseModel):
     access_token: str
@@ -93,10 +102,10 @@ class Preso(PresoBase):
 # --- Schemas Compostos (Para respostas completas) ---
 
 class ProcessoComEventos(Processo):
-    eventos: List[Evento] = [] # Um processo terá uma lista de seus eventos
+    eventos: List[Evento] = Field(default_factory=list) # Um processo terá uma lista de seus eventos
 
 class PresoDetalhe(Preso):
-    processos: List[ProcessoComEventos] = [] # Um preso terá uma lista de seus processos (com eventos)
+    processos: List[ProcessoComEventos] = Field(default_factory=list) # Um preso terá uma lista de seus processos (com eventos)
 
 # --- NOVO SCHEMA PARA CADASTRO ---
 
@@ -140,4 +149,34 @@ class EventoAlerta(BaseModel):
 
 # --- NOVO SCHEMA PARA ADMIN RESETAR SENHA ---
 class AdminPasswordReset(BaseModel):
-    nova_senha: str
+    nova_senha: str = Field(min_length=8)
+
+
+class ProcessoConsultaIntegracaoRequest(BaseModel):
+    numero_processo: str
+    tribunal: Optional[str] = None
+    fontes: List[Literal["datajud", "pje"]] = Field(default_factory=lambda: ["datajud", "pje"])
+
+
+class ProcessoConsultaIntegracaoResultado(BaseModel):
+    fonte: Literal["datajud", "pje"]
+    sucesso: bool
+    mensagem: Optional[str] = None
+    dados: Optional[dict[str, Any]] = None
+
+
+class ProcessoConsultaIntegracaoResponse(BaseModel):
+    numero_processo: str
+    resultados: List[ProcessoConsultaIntegracaoResultado]
+    melhor_resultado: Optional[dict[str, Any]] = None
+
+
+class PessoaConsultaCPFRequest(BaseModel):
+    cpf: str
+
+
+class PessoaConsultaCPFResponse(BaseModel):
+    cpf: str
+    sucesso: bool
+    mensagem: Optional[str] = None
+    dados: Optional[dict[str, Any]] = None

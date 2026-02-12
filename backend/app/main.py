@@ -1,21 +1,32 @@
 from datetime import date
+import logging
+import os
+import secrets
 from . import crud, models, schemas
 from .database import SessionLocal, engine, get_db
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import timedelta, datetime, timezone
 from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
 from apscheduler.schedulers.background import BackgroundScheduler
+from .integracoes import consultar_processo_externo, consultar_cpf_externo
+from .notifications import send_email_alerts
 
 # Esta linha é crucial! Ela cria as tabelas no seu banco de dados
 # com base no que definimos em models.py
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Sistema de Controle de Presos")
+logger = logging.getLogger(__name__)
+AUTH_COOKIE_NAME = "access_token"
+CSRF_COOKIE_NAME = "csrf_token"
+IS_PRODUCTION = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() in {"production", "prod"}
 
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
 # Lista de "origens" (endereços) que podem acessar este backend
@@ -35,13 +46,48 @@ app.add_middleware(
 )
 # --- FIM DA CONFIGURAÇÃO DO CORS ---
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+    csrf_exempt_paths = {"/api/token", "/api/logout", "/api/csrf-token"}
+    if (
+        request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and request.url.path.startswith("/api")
+        and request.url.path not in csrf_exempt_paths
+    ):
+        session_cookie = request.cookies.get(AUTH_COOKIE_NAME)
+        if session_cookie:
+            csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+            csrf_header = request.headers.get("X-CSRF-Token")
+            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+                return JSONResponse(status_code=403, content={"detail": "CSRF token inválido."})
+    return await call_next(request)
+
+async def get_current_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
     """
     Dependência para obter o usuário logado a partir do token.
     """
-    cpf = decode_access_token(token)
+    access_token = token
+    if not access_token:
+        access_token = request.cookies.get(AUTH_COOKIE_NAME)
+
+    if access_token and access_token.startswith("Bearer "):
+        access_token = access_token.replace("Bearer ", "", 1)
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Não autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    cpf = decode_access_token(access_token)
     if cpf is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,6 +135,7 @@ def create_new_user(
 
 @app.post("/api/token", response_model=schemas.Token, tags=["Autenticação"])
 def login_for_access_token(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     db: Session = Depends(get_db)
 ):
@@ -113,8 +160,50 @@ def login_for_access_token(
         data={"sub": user.cpf, "role": user.role}, 
         expires_delta=access_token_expires
     )
+    csrf_token = secrets.token_urlsafe(32)
+
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/api/logout", tags=["Autenticação"])
+def logout(response: Response):
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
+    return {"message": "Logout realizado com sucesso."}
+
+
+@app.get("/api/csrf-token", tags=["Autenticação"])
+def get_csrf_token(request: Request, response: Response):
+    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or secrets.token_urlsafe(32)
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    return {"csrf_token": csrf_token}
 
 # --- Endpoints de Preso ---
 
@@ -133,12 +222,20 @@ def create_preso_e_processo(
     
     try:
         return crud.create_preso_completo(db=db, cadastro=cadastro)
-    except Exception as e:
-        # (Opcional: logar o erro 'e')
-        raise HTTPException(status_code=400, detail=f"Erro ao cadastrar: {e}")
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Dados inválidos ou conflitantes para cadastro.")
+    except Exception:
+        db.rollback()
+        logger.exception("Falha ao criar cadastro completo")
+        raise HTTPException(status_code=500, detail="Não foi possível concluir o cadastro no momento.")
 
 @app.post("/api/presos/", response_model=schemas.Preso, tags=["Presos"])
-def create_preso(preso: schemas.PresoCreate, db: Session = Depends(get_db)):
+def create_preso(
+    preso: schemas.PresoCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     # Verifica se o CPF já existe
     if preso.cpf:
         db_preso = crud.get_preso_by_cpf(db, cpf=preso.cpf)
@@ -197,18 +294,25 @@ def create_evento_for_processo(
     current_user: models.User = Depends(get_current_user) # <-- ADICIONE A PROTEÇÃO
 ):
     # (Opcional: checar se o usuário tem permissão para este processo)
-    return crud.create_evento(db=db, evento=evento, processo_id=processo_id)
+    novo_evento = crud.create_evento(db=db, evento=evento, processo_id=processo_id)
+    _sincronizar_alertas_status(db)
+    db.refresh(novo_evento)
+    return novo_evento
 
 # --- Endpoint de Alerta (O MVP do seu sistema de alertas) ---
 # (A lógica de background ainda não está aqui, mas o endpoint de consulta está)
 
 @app.get("/api/alertas/proximos", response_model=List[schemas.Evento], tags=["Alertas"])
-def get_proximos_alertas(db: Session = Depends(get_db)):
+def get_proximos_alertas(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """
     Retorna todos os eventos com status 'pendente' ou 'disparado'
     que ainda não aconteceram, ordenados pelo mais próximo.
     """
-    agora = datetime.now()
+    _sincronizar_alertas_status(db)
+    agora = datetime.now(timezone.utc)
     eventos = db.query(models.Evento).filter(
         models.Evento.data_evento > agora,
         models.Evento.alerta_status.in_([models.AlertaStatusEnum.pendente, models.AlertaStatusEnum.disparado])
@@ -218,37 +322,86 @@ def get_proximos_alertas(db: Session = Depends(get_db)):
 
 # --- LÓGICA DO JOB AGENDADO (ROBÔ) ---
 
+
+def _sincronizar_alertas_status(db: Session) -> list[models.Evento]:
+    """
+    Atualiza eventos pendentes para 'disparado' quando estiverem
+    dentro da janela de 7 dias.
+    """
+    agora = datetime.now(timezone.utc)
+    limite_dias = agora + timedelta(days=7)
+
+    eventos_para_alertar = db.query(models.Evento).options(
+        joinedload(models.Evento.processo).joinedload(models.Processo.preso)
+    ).filter(
+        models.Evento.data_evento > agora,
+        models.Evento.data_evento <= limite_dias,
+        models.Evento.alerta_status == models.AlertaStatusEnum.pendente
+    ).all()
+
+    if not eventos_para_alertar:
+        return []
+
+    for evento in eventos_para_alertar:
+        evento.alerta_status = models.AlertaStatusEnum.disparado
+
+    db.commit()
+    return eventos_para_alertar
+
 def check_alertas_job():
     """
     Função que o Scheduler rodará.
     Verifica eventos nos próximos 7 dias e muda o status para 'disparado'.
     """
-    print(f"[{datetime.now()}] Rodando Job de Verificação de Alertas...")
+    logger.info("Rodando job de verificação de alertas")
     db: Session = SessionLocal() # O Job precisa criar sua própria sessão de DB
     try:
-        agora = datetime.now(timezone.utc)
-        limite_dias = agora + timedelta(days=7)
-
-        # 1. Encontra eventos "pendentes" que vencem nos próximos 7 dias
-        eventos_para_alertar = db.query(models.Evento).filter(
-            models.Evento.data_evento > agora,
-            models.Evento.data_evento <= limite_dias,
-            models.Evento.alerta_status == models.AlertaStatusEnum.pendente
-        ).all()
+        eventos_para_alertar = _sincronizar_alertas_status(db)
 
         if not eventos_para_alertar:
-            print("Nenhum novo alerta para disparar.")
+            logger.info("Nenhum novo alerta para disparar")
             return
 
-        # 2. Atualiza o status
-        for evento in eventos_para_alertar:
-            evento.alerta_status = models.AlertaStatusEnum.disparado
-        
-        db.commit()
-        print(f"Job finalizado. {len(eventos_para_alertar)} alertas atualizados para 'disparado'.")
+        logger.info("Job finalizado. %s alertas atualizados para 'disparado'.", len(eventos_para_alertar))
 
-    except Exception as e:
-        print(f"Erro no Job de Alertas: {e}")
+        usuarios_para_notificar = crud.get_users_for_email_alerts(db)
+        destinatarios = [usuario.email for usuario in usuarios_para_notificar if usuario.email]
+        if destinatarios:
+            total_alertas = len(eventos_para_alertar)
+            alertas_preview = []
+            for evento in eventos_para_alertar[:20]:
+                numero_processo = evento.processo.numero_processo if evento.processo else "-"
+                nome_preso = "-"
+                if evento.processo and evento.processo.preso:
+                    nome_preso = evento.processo.preso.nome_completo
+                data_evento = evento.data_evento.strftime("%d/%m/%Y %H:%M")
+                alertas_preview.append(
+                    f"- {data_evento} | {evento.tipo_evento.value} | Proc. {numero_processo} | {nome_preso}"
+                )
+
+            mensagem = [
+                "Novos alertas processuais foram disparados no Sistema de Controle de Presos.",
+                "",
+                f"Total de alertas: {total_alertas}",
+                "",
+                "Prévia (até 20):",
+                *alertas_preview,
+                "",
+                "Acesse o sistema para ver todos os detalhes.",
+            ]
+
+            enviado = send_email_alerts(
+                recipients=destinatarios,
+                subject=f"[Controle de Presos] {total_alertas} novo(s) alerta(s) processual(is)",
+                body="\n".join(mensagem),
+            )
+            if enviado:
+                logger.info("E-mail de alertas enviado para %s usuário(s)", len(destinatarios))
+            else:
+                logger.warning("E-mail de alertas não foi enviado; verifique configuração SMTP")
+
+    except Exception:
+        logger.exception("Erro no job de alertas")
         db.rollback()
     finally:
         db.close()
@@ -276,15 +429,30 @@ def start_scheduler():
 # --- NOVO ENDPOINT DE ALERTAS ATIVOS ---
 @app.get("/api/alertas/ativos", response_model=List[schemas.EventoAlerta], tags=["Alertas"])
 def get_alertas_ativos(
+    response: Response,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user), # Protegido
-    limit: Optional[int] = None # <-- 1. ADICIONE ESTE PARÂMETRO
+    skip: int = Query(default=0, ge=0, le=100000),
+    limit: Optional[int] = Query(default=None, ge=1, le=100)
 ):
     """
     Retorna todos os eventos que foram "disparados" e ainda não venceram.
     """
+    _sincronizar_alertas_status(db)
     agora = datetime.now(timezone.utc)
     
+    base_query = db.query(models.Evento).filter(
+        models.Evento.alerta_status == models.AlertaStatusEnum.disparado,
+        models.Evento.data_evento > agora
+    )
+
+    total_alertas = base_query.count()
+    limite_semana = agora + timedelta(days=7)
+    total_semana = base_query.filter(models.Evento.data_evento <= limite_semana).count()
+
+    response.headers["X-Total-Count"] = str(total_alertas)
+    response.headers["X-Week-Count"] = str(total_semana)
+
     query = db.query(models.Evento).options(
         joinedload(models.Evento.processo).joinedload(models.Processo.preso)
     ).filter(
@@ -293,9 +461,12 @@ def get_alertas_ativos(
     ).order_by(
         models.Evento.data_evento.asc()
     )
+
+    if skip:
+        query = query.offset(skip)
     
     # --- 2. APLIQUE O LIMITE SE ELE FOR FORNECIDO ---
-    if limit:
+    if limit is not None:
         query = query.limit(limit)
     
     alertas = query.all()
@@ -378,6 +549,32 @@ def read_users_me(
     return current_user
 
 
+@app.get("/api/users/me/notificacoes", response_model=schemas.UserNotificationPreference, tags=["Usuário"])
+def read_users_me_notifications(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Retorna preferências de notificação do usuário logado."""
+    pref = crud.get_user_notification_preference(db=db, user_id=current_user.id)
+    if pref is None:
+        return schemas.UserNotificationPreference(receber_alertas_email=False)
+    return pref
+
+
+@app.put("/api/users/me/notificacoes", response_model=schemas.UserNotificationPreference, tags=["Usuário"])
+def update_users_me_notifications(
+    payload: schemas.UserNotificationPreferenceUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Atualiza preferências de notificação do usuário logado."""
+    return crud.upsert_user_notification_preference(
+        db=db,
+        user_id=current_user.id,
+        receber_alertas_email=payload.receber_alertas_email,
+    )
+
+
 @app.put("/api/users/me", response_model=schemas.User, tags=["Usuário"])
 def update_users_me(
     user_in: schemas.UserUpdate,
@@ -410,14 +607,17 @@ def change_users_me_password(
 # --- NOVO ENDPOINT DE LISTAR USUÁRIOS ---
 @app.get("/api/users/", response_model=List[schemas.User], tags=["Usuário"])
 def read_users(
-    skip: int = 0,
-    limit: int = 100,
+    response: Response,
+    skip: int = Query(default=0, ge=0, le=10000),
+    limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(get_current_admin_user) # Protegido
 ):
     """
     Retorna uma lista de todos os usuários. (Apenas Admins)
     """
+    total_users = db.query(models.User).count()
+    response.headers["X-Total-Count"] = str(total_users)
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
@@ -466,6 +666,46 @@ def update_user_by_admin_endpoint(
         return updated_user
     except HTTPException as e:
         raise e
-    except Exception as e:
-        # Pega o erro de email duplicado do crud.update_user_profile
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Falha ao atualizar usuário por admin")
+        raise HTTPException(status_code=500, detail="Não foi possível atualizar o usuário no momento.")
+
+
+@app.post(
+    "/api/integracoes/processos/consultar",
+    response_model=schemas.ProcessoConsultaIntegracaoResponse,
+    tags=["Integrações"]
+)
+def consultar_processo_integracoes(
+    payload: schemas.ProcessoConsultaIntegracaoRequest,
+    current_user: models.User = Depends(get_current_user)
+):
+    try:
+        return consultar_processo_externo(
+            numero_processo=payload.numero_processo,
+            fontes=payload.fontes,
+            tribunal=payload.tribunal,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        logger.exception("Erro inesperado ao consultar integrações externas")
+        raise HTTPException(status_code=500, detail="Falha ao consultar integração externa.")
+
+
+@app.post(
+    "/api/integracoes/cpf/consultar",
+    response_model=schemas.PessoaConsultaCPFResponse,
+    tags=["Integrações"]
+)
+def consultar_cpf_integracao(
+    payload: schemas.PessoaConsultaCPFRequest,
+    current_user: models.User = Depends(get_current_user)
+):
+    try:
+        return consultar_cpf_externo(cpf=payload.cpf)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        logger.exception("Erro inesperado ao consultar integração de CPF")
+        raise HTTPException(status_code=500, detail="Falha ao consultar integração de CPF.")

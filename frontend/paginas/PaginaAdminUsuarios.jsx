@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../src/api';
 import {
   Box, Typography, Paper, Grid, TextField, Button, Skeleton,
   FormControl, InputLabel, Select, MenuItem, Snackbar, Alert,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination,
   IconButton, Tooltip, Modal, Fade, Backdrop,
   Switch, // Para o tema
   ListItemText // Para o tema
@@ -11,8 +11,6 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import LockResetIcon from '@mui/icons-material/LockReset';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Estilo do Modal
 const styleModal = {
@@ -38,6 +36,9 @@ const createInitialState = {
 export function PaginaAdminUsuarios() {
   const [usuarios, setUsuarios] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalUsuarios, setTotalUsuarios] = useState(0);
 
   // --- Estados do Modal de Criação ---
   const [modalCreateOpen, setModalCreateOpen] = useState(false);
@@ -62,19 +63,27 @@ export function PaginaAdminUsuarios() {
   const fetchUsuarios = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/users/`);
+      const skip = page * rowsPerPage;
+      const response = await api.get(`/api/users/?skip=${skip}&limit=${rowsPerPage}`);
       setUsuarios(response.data);
+      setTotalUsuarios(Number(response.headers['x-total-count'] || response.data.length || 0));
     } catch (error) {
       console.error("Erro ao buscar usuários:", error);
       setSnack({ open: true, message: 'Erro ao carregar lista de usuários.', severity: 'error' });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [page, rowsPerPage]);
 
   useEffect(() => {
     fetchUsuarios();
   }, [fetchUsuarios]);
+
+  const handleChangePage = (event, newPage) => setPage(newPage);
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   // --- Handlers do Snackbar ---
   const handleCloseSnack = () => setSnack(prev => ({ ...prev, open: false }));
@@ -94,7 +103,7 @@ export function PaginaAdminUsuarios() {
     const payload = { ...formCreate, cpf: formCreate.cpf.replace(/[^\d]+/g, '') };
 
     try {
-      await axios.post(`${API_URL}/api/users/`, payload);
+      await api.post('/api/users/', payload);
       setSnack({ open: true, message: `Usuário '${payload.nome_completo}' criado com sucesso!`, severity: 'success' });
       handleCloseModalCreate();
       fetchUsuarios(); // Recarrega a lista
@@ -137,7 +146,7 @@ export function PaginaAdminUsuarios() {
         email: formEdit.email,
         preferencia_tema: formEdit.preferencia_tema
       };
-      await axios.put(`${API_URL}/api/users/${formEdit.id}`, payload);
+      await api.put(`/api/users/${formEdit.id}`, payload);
       setSnack({ open: true, message: "Usuário atualizado com sucesso!", severity: 'success' });
       handleCloseModalEdit();
       fetchUsuarios(); // Recarrega a lista
@@ -165,7 +174,7 @@ export function PaginaAdminUsuarios() {
     }
     setIsReseting(true);
     try {
-      await axios.post(`${API_URL}/api/users/${usuarioSelecionado.id}/reset-password`, {
+      await api.post(`/api/users/${usuarioSelecionado.id}/reset-password`, {
         nova_senha: novaSenha
       });
       setSnack({ open: true, message: `Senha do usuário '${usuarioSelecionado.nome_completo}' resetada com sucesso!`, severity: 'success' });
@@ -221,6 +230,7 @@ export function PaginaAdminUsuarios() {
                       <Tooltip title="Editar Usuário">
                         {/* --- BOTÃO DE LÁPIS AGORA FUNCIONA --- */}
                         <IconButton 
+                          aria-label="Editar usuário"
                           color="primary" 
                           onClick={() => handleOpenModalEdit(user)}
                         >
@@ -229,6 +239,7 @@ export function PaginaAdminUsuarios() {
                       </Tooltip>
                       <Tooltip title="Resetar Senha">
                         <IconButton
+                          aria-label="Resetar senha do usuário"
                           color="secondary"
                           onClick={() => handleOpenModalReset(user)}
                         >
@@ -242,6 +253,16 @@ export function PaginaAdminUsuarios() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination
+          rowsPerPageOptions={[5, 10, 25]}
+          component="div"
+          count={totalUsuarios}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+          labelRowsPerPage="Linhas por página:"
+        />
       </Paper>
 
       {/* --- Modal de CRIAR Usuário --- */}

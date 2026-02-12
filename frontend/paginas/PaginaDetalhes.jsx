@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../src/api';
+import { formatarData } from '../src/util/formatarData';
+import { tiposDeEvento } from '../src/util/tiposEvento';
+import { PainelInfoPreso } from '../src/componentes/detalhes/PainelInfoPreso';
+import { ListaProcessos } from '../src/componentes/detalhes/ListaProcessos';
 import {
-  Box, Typography, Paper, Grid, CircularProgress, Alert,
-  Breadcrumbs, Link, Button, Divider, Avatar, Chip,
-  Accordion, AccordionSummary, AccordionDetails,
+  Box, Typography, Grid, CircularProgress, Alert,
+  Breadcrumbs, Link, Button,
   Modal, Fade, Backdrop, TextField, FormControl,
   InputLabel, Select, MenuItem, Snackbar,
-  IconButton,
-  Tooltip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -19,18 +20,8 @@ import { IMaskInput } from 'react-imask'; // Importa a máscara
 
 // Ícones
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
-import PersonIcon from '@mui/icons-material/Person';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import GavelIcon from '@mui/icons-material/Gavel';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 
 // --- CONSTANTES E HELPERS ---
-
-// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
-// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Estilo do Modal (para centralizá-lo)
 const styleModal = {
@@ -43,45 +34,6 @@ const styleModal = {
   boxShadow: 24,
   p: 4,
   borderRadius: 2,
-};
-
-// Função para formatar datas (YYYY-MM-DD -> DD/MM/YYYY)
-const formatarData = (dataISO, incluirHoras = false) => {
-  if (!dataISO) return 'N/A';
-  try {
-    const data = new Date(dataISO);
-    const opcoesData = {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    };
-    const opcoesHora = {
-      hour: '2-digit',
-      minute: '2-digit',
-    };
-    
-    const opcoes = incluirHoras 
-      ? { ...opcoesData, ...opcoesHora } 
-      : opcoesData;
-      
-    return data.toLocaleString('pt-BR', opcoes);
-  } catch (e) {
-    // Tenta formatar apenas a data se falhar (ex: '2023-10-25')
-    try {
-      const [ano, mes, dia] = dataISO.split('T')[0].split('-');
-      return `${dia}/${mes}/${ano}`;
-    } catch (e2) {
-      return dataISO; // Retorna o original se tudo falhar
-    }
-  }
-};
-
-// Mapeamento dos tipos de evento (do nosso backend/models.py)
-const tiposDeEvento = {
-  audiencia: "Audiência",
-  reavaliacao_preventiva: "Reavaliação de Prisão",
-  prazo_recurso: "Prazo de Recurso",
-  outro: "Outro"
 };
 
 // Opções para os campos Select (da PaginaCadastro)
@@ -178,7 +130,7 @@ export function PaginaDetalhes() {
     }
     setError('');
     try {
-      const response = await axios.get(`${API_URL}/api/presos/${presoId}`);
+      const response = await api.get(`/api/presos/${presoId}`);
       setPreso(response.data);
       // Prepara o formulário de edição do preso com os dados recebidos
       setFormEditarPreso({
@@ -213,7 +165,7 @@ export function PaginaDetalhes() {
   const handleSalvarEvento = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}/api/processos/${processoSelecionadoId}/eventos/`, novoEventoForm);
+      await api.post(`/api/processos/${processoSelecionadoId}/eventos/`, novoEventoForm);
       setSnack({ open: true, message: "Evento adicionado com sucesso!", severity: 'success' });
       handleFecharModalEvento();
       fetchDetalhes(); // Recarrega
@@ -236,7 +188,7 @@ export function PaginaDetalhes() {
         cpf: formEditarPreso.cpf ? formEditarPreso.cpf.replace(/[^\d]+/g, '') : null,
         data_nascimento: formEditarPreso.data_nascimento || null, // Garante null se vazio
       };
-      await axios.put(`${API_URL}/api/presos/${presoId}`, payload);
+      await api.put(`/api/presos/${presoId}`, payload);
       setSnack({ open: true, message: "Dados do preso atualizados!", severity: 'success' });
       handleFecharModalEditarPreso();
       fetchDetalhes(); // Recarrega
@@ -269,7 +221,7 @@ export function PaginaDetalhes() {
         numero_processo: formEditarProcesso.numero_processo ? formEditarProcesso.numero_processo.replace(/[^\d]+/g, '') : null,
         data_prisao: formEditarProcesso.data_prisao || null, // Garante null se vazio
       };
-      await axios.put(`${API_URL}/api/processos/${formEditarProcesso.id}`, payload);
+      await api.put(`/api/processos/${formEditarProcesso.id}`, payload);
       setSnack({ open: true, message: "Processo atualizado!", severity: 'success' });
       handleFecharModalEditarProcesso();
       fetchDetalhes(); // Recarrega
@@ -283,13 +235,64 @@ export function PaginaDetalhes() {
   const handleFecharModalDeletar = () => setModalDeletarOpen(false);
   const handleConfirmarDelecao = async () => {
     try {
-      await axios.delete(`${API_URL}/api/presos/${presoId}`);
+      await api.delete(`/api/presos/${presoId}`);
       handleFecharModalDeletar();
       // TODO: Mostrar snack de sucesso no dashboard (mais complexo, envolve state/context)
       navigate('/'); // Redireciona para o Dashboard
     } catch (error) {
       setSnack({ open: true, message: "Erro ao deletar.", severity: 'error' });
     }
+  };
+
+  const handleExportarRelatorio = () => {
+    if (!preso) {
+      setSnack({ open: true, message: 'Nenhum dado disponível para exportação.', severity: 'warning' });
+      return;
+    }
+
+    const linhas = [
+      ['Tipo', 'Campo', 'Valor'],
+      ['Preso', 'Nome Completo', preso.nome_completo || ''],
+      ['Preso', 'CPF', preso.cpf || ''],
+      ['Preso', 'Nome da Mãe', preso.nome_da_mae || ''],
+      ['Preso', 'Data de Nascimento', preso.data_nascimento || ''],
+      ['Preso', 'Criado em', preso.criado_em || ''],
+    ];
+
+    (preso.processos || []).forEach((processo, index) => {
+      const processoLabel = `Processo ${index + 1}`;
+      linhas.push([processoLabel, 'Número', processo.numero_processo || '']);
+      linhas.push([processoLabel, 'Status', processo.status_processual || '']);
+      linhas.push([processoLabel, 'Tipo de Prisão', processo.tipo_prisao || '']);
+      linhas.push([processoLabel, 'Data da Prisão', processo.data_prisao || '']);
+      linhas.push([processoLabel, 'Local de Segregação', processo.local_segregacao || '']);
+
+      (processo.eventos || []).forEach((evento, eventoIndex) => {
+        const eventoLabel = `${processoLabel} - Evento ${eventoIndex + 1}`;
+        linhas.push([eventoLabel, 'Tipo', tiposDeEvento[evento.tipo_evento] || evento.tipo_evento || '']);
+        linhas.push([eventoLabel, 'Data', evento.data_evento || '']);
+        linhas.push([eventoLabel, 'Status do Alerta', evento.alerta_status || '']);
+        linhas.push([eventoLabel, 'Descrição', evento.descricao || '']);
+      });
+    });
+
+    const escapeCsv = (valor) => `"${String(valor ?? '').replace(/"/g, '""')}"`;
+    const csvContent = linhas.map((linha) => linha.map(escapeCsv).join(';')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    const nomeSeguro = (preso.nome_completo || 'preso').trim().toLowerCase().replace(/[^a-z0-9]+/gi, '_');
+    const fileName = `relatorio_${nomeSeguro}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setSnack({ open: true, message: 'Relatório exportado com sucesso.', severity: 'success' });
   };
 
   // --- Handlers do Snackbar ---
@@ -326,134 +329,24 @@ export function PaginaDetalhes() {
         
         {/* Coluna da Esquerda (Info Pessoal) */}
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Avatar sx={{ width: 120, height: 120, margin: 'auto', mb: 2 }}>
-              <PersonIcon sx={{ fontSize: 80 }} />
-            </Avatar>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-              {preso.nome_completo}
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-              CPF: {preso.cpf || 'Não informado'}
-            </Typography>
-            
-            {/* Tags */}
-            {preso.processos && preso.processos[0] && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap', mb: 3 }}>
-                <Chip label={preso.processos[0].tipo_prisao || 'Tipo N/A'} color="warning" />
-                <Chip label={preso.processos[0].status_processual || 'Status N/A'} color="info" />
-              </Box>
-            )}
-
-            {/* Botões de Ação */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 3, mb: 3 }}>
-              <Button 
-                variant="contained" 
-                startIcon={<EditIcon />}
-                onClick={handleAbrirModalEditarPreso}
-              >
-                Editar Dados Pessoais
-              </Button>
-              <Button variant="outlined">Exportar Relatório</Button>
-              <Button 
-                variant="outlined" 
-                color="error" 
-                startIcon={<DeleteIcon />}
-                onClick={handleAbrirModalDeletar}
-              >
-                Deletar Cadastro
-              </Button>
-            </Box>
-
-            <Divider sx={{ my: 2 }} />
-
-            <Box sx={{ textAlign: 'left', color: 'text.secondary' }}>
-              <Typography variant="body2">
-                <strong>Data de Nasc.:</strong> {formatarData(preso.data_nascimento)}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Mãe:</strong> {preso.nome_da_mae || 'Não informado'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Cadastrado em:</strong> {formatarData(preso.criado_em)}
-              </Typography>
-            </Box>
-          </Paper>
+          <PainelInfoPreso
+            preso={preso}
+            formatarData={formatarData}
+            onEditar={handleAbrirModalEditarPreso}
+            onDeletar={handleAbrirModalDeletar}
+            onExportar={handleExportarRelatorio}
+          />
         </Grid>
 
         {/* Coluna da Direita (Processos e Eventos) */}
         <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
-              Processos Vinculados ({preso.processos.length})
-            </Typography>
-
-            <Box>
-              {preso.processos.length > 0 ? preso.processos.map((proc, index) => (
-                <Accordion key={proc.id} defaultExpanded={index === 0}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <GavelIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                    <Typography sx={{ fontWeight: 'bold', flexGrow: 1 }}>
-                      Processo: {proc.numero_processo}
-                    </Typography>
-                    {/* Botão Editar Processo */}
-                    <Tooltip title="Editar Processo">
-                      <IconButton 
-                        size="small" 
-                        onClick={(e) => {
-                          e.stopPropagation(); // Impede o Accordion de abrir/fechar
-                          handleAbrirModalEditarProcesso(proc);
-                        }}
-                        sx={{ mr: 1 }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </AccordionSummary>
-                  <AccordionDetails sx={{ backgroundColor: '#f9f9f9' }}>
-                    <Grid container spacing={1}>
-                      <Grid item xs={12} sm={6}><Typography variant="body2"><strong>Status:</strong> {proc.status_processual || 'N/A'}</Typography></Grid>
-                      <Grid item xs={12} sm={6}><Typography variant="body2"><strong>Tipo da Prisão:</strong> {proc.tipo_prisao || 'N/A'}</Typography></Grid>
-                      <Grid item xs={12} sm={6}><Typography variant="body2"><strong>Data da Prisão:</strong> {formatarData(proc.data_prisao)}</Typography></Grid>
-                      <Grid item xs={12} sm={6}><Typography variant="body2"><strong>Local:</strong> {proc.local_segregacao || 'N/A'}</Typography></Grid>
-                    </Grid>
-
-                    <Divider sx={{ my: 2 }} />
-                    
-                    {/* Área de Eventos */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                        Eventos Futuros ({proc.eventos.length})
-                      </Typography>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<AddCircleOutlineIcon />}
-                        onClick={() => handleAbrirModalEvento(proc.id)}
-                      >
-                        Adicionar Evento
-                      </Button>
-                    </Box>
-
-                    {proc.eventos.length > 0 ? proc.eventos.map(evento => (
-                       <Paper key={evento.id} variant="outlined" sx={{ p: 1.5, mb: 1 }}>
-                         <Typography variant="body2">
-                           <strong>{tiposDeEvento[evento.tipo_evento] || evento.tipo_evento}:</strong> {formatarData(evento.data_evento, true)}
-                         </Typography>
-                         {evento.descricao && <Typography variant="caption" color="text.secondary">{evento.descricao}</Typography>}
-                       </Paper>
-                    )) : (
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 2, textAlign: 'center' }}>
-                        Nenhum evento futuro cadastrado.
-                      </Typography>
-                    )}
-                  </AccordionDetails>
-                </Accordion>
-              )) : (
-                <Alert severity="info">Nenhum processo cadastrado para esta pessoa.</Alert>
-              )}
-            </Box>
-          </Paper>
+          <ListaProcessos
+            processos={preso.processos}
+            formatarData={formatarData}
+            tiposDeEvento={tiposDeEvento}
+            onEditarProcesso={handleAbrirModalEditarProcesso}
+            onAbrirEvento={handleAbrirModalEvento}
+          />
         </Grid>
       </Grid>
 

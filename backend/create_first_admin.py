@@ -1,5 +1,6 @@
 # backend/create_first_admin.py
 import os
+from getpass import getpass
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,10 +10,9 @@ load_dotenv()
 
 # Importa os módulos da nossa aplicação
 # (Isso assume que você roda o script da pasta 'backend/')
-from app.models import User, Base
+from app.models import Base
 from app.schemas import UserCreate
 from app.crud import create_user, get_user_by_cpf
-from app.database import engine
 
 # --- Configuração do Banco ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -43,18 +43,25 @@ def main():
     db = SessionLocal()
     
     try:
-        # --- DEFINA OS DADOS DO SEU ADMIN AQUI ---
-        ADMIN_NOME = "Admin do Sistema"
-        ADMIN_CPF = "03859109162" # Importante: Use um CPF real ou um que você lembre
-        ADMIN_EMAIL = "weslley.unemat@gmail.com"
-        ADMIN_SENHA = "W3$ll3y@1992" # Importante: Mude isso!
-        # --------------------------------------------
+        admin_nome = os.getenv("FIRST_ADMIN_NOME") or input("Nome completo do admin: ").strip()
+        admin_cpf = os.getenv("FIRST_ADMIN_CPF") or input("CPF do admin (somente números): ").strip()
+        admin_email = os.getenv("FIRST_ADMIN_EMAIL") or input("Email do admin: ").strip()
+        admin_senha = os.getenv("FIRST_ADMIN_SENHA") or getpass("Senha do admin: ")
+
+        if not admin_nome:
+            raise ValueError("Nome do admin é obrigatório.")
+        if not admin_cpf or len(admin_cpf) != 11 or not admin_cpf.isdigit():
+            raise ValueError("CPF inválido. Informe 11 dígitos numéricos.")
+        if not admin_email:
+            raise ValueError("Email do admin é obrigatório.")
+        if not admin_senha or len(admin_senha) < 8:
+            raise ValueError("Senha do admin deve ter pelo menos 8 caracteres.")
 
         # 1. Verifica se o admin já existe
-        admin = get_user_by_cpf(db, cpf=ADMIN_CPF)
+        admin = get_user_by_cpf(db, cpf=admin_cpf)
         
         if admin:
-            print(f"Usuário com CPF {ADMIN_CPF} já existe.")
+            print(f"Usuário com CPF {admin_cpf} já existe.")
             if admin.role != "admin":
                 print("Atualizando usuário existente para 'admin'...")
                 admin.role = "admin"
@@ -65,12 +72,12 @@ def main():
             return
 
         # 2. Se não existe, cria o novo admin
-        print(f"Criando novo usuário admin com CPF: {ADMIN_CPF}...")
+        print(f"Criando novo usuário admin com CPF: {admin_cpf}...")
         admin_schema = UserCreate(
-            nome_completo=ADMIN_NOME,
-            cpf=ADMIN_CPF,
-            email=ADMIN_EMAIL,
-            password=ADMIN_SENHA,
+            nome_completo=admin_nome,
+            cpf=admin_cpf,
+            email=admin_email,
+            password=admin_senha,
             role="admin"  # <-- Define o papel
         )
         
@@ -78,8 +85,7 @@ def main():
         
         print("\n--- [ SUCESSO ] ---")
         print("Usuário admin criado com sucesso!")
-        print(f"CPF (Username): {ADMIN_CPF}")
-        print(f"Senha: {ADMIN_SENHA}")
+        print(f"CPF (Username): {admin_cpf}")
         print("--------------------")
         
     except Exception as e:

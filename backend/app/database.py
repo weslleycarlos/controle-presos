@@ -1,8 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 # 1. Carrega as variáveis de ambiente do arquivo .env
 #    Isso vai procurar por um arquivo .env na pasta 'backend/' e carregá-lo.

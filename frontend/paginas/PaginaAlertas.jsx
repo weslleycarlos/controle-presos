@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../src/api';
+import { formatarData } from '../src/util/formatarData';
+import { tiposDeEvento } from '../src/util/tiposEvento';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Skeleton, Grid,
   Button,
   IconButton, // Botão de ícone
-  Tooltip // "Dica" do mouse
+  Tooltip, // "Dica" do mouse
+  Snackbar,
+  Alert,
+  TablePagination
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
@@ -14,63 +19,42 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'; // 
 import VisibilityIcon from '@mui/icons-material/Visibility'; // Ícone de "Ver"
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'; // Para os filtros
 
-// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
-// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-
-// Função para formatar datas (YYYY-MM-DDTHH:MM -> DD/MM/YYYY HH:MM)
-const formatarData = (dataISO) => {
-  if (!dataISO) return 'N/A';
-  try {
-    const data = new Date(dataISO);
-    return data.toLocaleString('pt-BR', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
-  } catch (e) { return dataISO; }
-};
-
-// Mapeamento dos tipos de evento (para tradução)
-const tiposDeEvento = {
-  audiencia: "Audiência",
-  reavaliacao_preventiva: "Reavaliação de Prisão",
-  prazo_recurso: "Prazo de Recurso",
-  outro: "Outro"
-};
-
 export function PaginaAlertas() {
   const [alertas, setAlertas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalAlertas, setTotalAlertas] = useState(0);
   const [stats, setStats] = useState({ total: 0, estaSemana: 0, vencidos: 0 });
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
 
   // --- Função de Busca de Dados ---
   // (Usando useCallback para podermos chamá-la de dentro de outros handlers)
   const fetchAlertas = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/alertas/ativos`);
+      const skip = page * rowsPerPage;
+      const response = await api.get(`/api/alertas/ativos?skip=${skip}&limit=${rowsPerPage}`);
       const dados = response.data;
       setAlertas(dados);
 
-      // Calcular Estatísticas
-      const agora = new Date();
-      const proximaSemana = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
-      
-      const alertasEstaSemana = dados.filter(a => new Date(a.data_evento) <= proximaSemana).length;
-      // (O backend já filtra vencidos, mas podemos adicionar a lógica aqui se mudar)
+      const total = Number(response.headers['x-total-count'] || dados.length || 0);
+      const estaSemana = Number(response.headers['x-week-count'] || 0);
+      setTotalAlertas(total);
       
       setStats({
-        total: dados.length,
-        estaSemana: alertasEstaSemana,
+        total,
+        estaSemana,
         vencidos: 0 // O endpoint /ativos já remove vencidos
       });
 
     } catch (error) {
       console.error("Erro ao buscar alertas:", error);
+      setSnack({ open: true, message: 'Erro ao carregar alertas.', severity: 'error' });
     } finally {
       setIsLoading(false);
     }
-  }, []); // useCallback com array de dependência vazio
+  }, [page, rowsPerPage]);
 
   // Roda o fetchAlertas na montagem do componente
   useEffect(() => {
@@ -80,7 +64,7 @@ export function PaginaAlertas() {
   // --- Handler para "concluir" um alerta ---
   const handleConcluirAlerta = async (eventoId) => {
     try {
-      await axios.patch(`${API_URL}/api/eventos/${eventoId}/status`, {
+      await api.patch(`/api/eventos/${eventoId}/status`, {
         status: 'concluido' // Envia o novo status
       });
       
@@ -90,13 +74,20 @@ export function PaginaAlertas() {
 
     } catch (error) {
       console.error("Erro ao concluir alerta:", error);
-      // TODO: Adicionar um Snackbar de erro
+      setSnack({ open: true, message: 'Erro ao concluir alerta.', severity: 'error' });
     }
+  };
+
+  const handleCloseSnack = () => setSnack(prev => ({ ...prev, open: false }));
+  const handleChangePage = (event, newPage) => setPage(newPage);
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: '800', color: '#333', mb: 3 }}>
+      <Typography variant="h4" sx={{ fontWeight: '800', color: 'text.primary', mb: 3 }}>
         Gestão de Alertas
       </Typography>
 
@@ -176,7 +167,7 @@ export function PaginaAlertas() {
                           variant="body2" 
                           sx={{ 
                             fontWeight: '500', 
-                            color: '#0A2463', 
+                              color: 'primary.main', 
                             textDecoration: 'none',
                             '&:hover': { textDecoration: 'underline' } 
                           }}
@@ -195,6 +186,7 @@ export function PaginaAlertas() {
                       <TableCell sx={{ textAlign: 'center', p: 0 }}>
                         <Tooltip title="Ver Detalhes do Preso">
                           <IconButton 
+                            aria-label="Ver detalhes do preso"
                             component={RouterLink} 
                             to={`/preso/${alerta.processo.preso.id}`}
                             color="primary"
@@ -204,6 +196,7 @@ export function PaginaAlertas() {
                         </Tooltip>
                         <Tooltip title="Marcar Alerta como Concluído">
                           <IconButton
+                            aria-label="Concluir alerta"
                             color="success"
                             onClick={() => handleConcluirAlerta(alerta.id)}
                           >
@@ -225,8 +218,28 @@ export function PaginaAlertas() {
             </TableBody>
           </Table>
         </TableContainer>
-        {/* TODO: Adicionar Paginação se necessário */}
+        <TablePagination
+          rowsPerPageOptions={[5, 10, 25]}
+          component="div"
+          count={totalAlertas}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+          labelRowsPerPage="Linhas por página:"
+        />
       </Paper>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnack}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseSnack} severity={snack.severity} sx={{ width: '100%' }}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

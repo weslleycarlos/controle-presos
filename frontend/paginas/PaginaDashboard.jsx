@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'; // Importa useEffect e useCallback
-import axios from 'axios'; // Importa axios
+import api from '../src/api';
 import {
   Box, Typography, TextField, Button, Paper, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -20,10 +20,6 @@ const opcoesStatusProcessual = [
   'Outro',
 ];
 
-// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
-// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-
 // Função de Cor do Status (para o "ponto" colorido)
 const getStatusColor = (status) => {
   if (!status) return '#6c757d'; // Cinza (N/A)
@@ -34,7 +30,6 @@ const getStatusColor = (status) => {
 };
 
 export function PaginaDashboard() {
-  const [termoBusca, setTermoBusca] = useState('');
   const [presos, setPresos] = useState([]); // Onde os dados da API ficarão
   const [isLoading, setIsLoading] = useState(true); // Estado de carregamento
   
@@ -65,7 +60,7 @@ export function PaginaDashboard() {
       // Converte os parâmetros para uma string (ex: "?nome=Joao&status=Liberado")
       const queryString = params.toString();
       
-      const response = await axios.get(`${API_URL}/api/presos/search/?${queryString}`);
+      const response = await api.get(`/api/presos/search/?${queryString}`);
       setPresos(response.data);
       setPage(0); // Reseta a paginação
     } catch (error) {
@@ -107,10 +102,10 @@ export function PaginaDashboard() {
     <Box>
       {/* 1. Título da Página (igual) */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: '800', color: '#333' }}>
+        <Typography variant="h4" sx={{ fontWeight: '800', color: 'text.primary' }}>
           Dashboard de Busca
         </Typography>
-        <Typography variant="body1" sx={{ color: '#6c757d' }}>
+        <Typography variant="body1" sx={{ color: 'text.secondary' }}>
           Busque por presos usando um ou mais filtros.
         </Typography>
       </Box>
@@ -226,7 +221,7 @@ export function PaginaDashboard() {
                             variant="body2" 
                             sx={{ 
                               fontWeight: '500', 
-                              color: '#0A2463', 
+                              color: 'primary.main', 
                               textDecoration: 'none',
                               '&:hover': { textDecoration: 'underline' } 
                             }}

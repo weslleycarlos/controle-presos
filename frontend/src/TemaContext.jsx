@@ -1,9 +1,7 @@
 import React, { createContext, useState, useMemo, useContext } from 'react';
 import { createTheme, ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+import api from './api';
 
 // 1. Criar o Contexto
 export const TemaContext = createContext({
@@ -22,18 +20,11 @@ export function ProvedorTema({ children }) {
 
   // Função para salvar a preferência no backend (sem bloquear a UI)
   const salvarTemaNoBackend = async (novoModo) => {
-    const token = localStorage.getItem('authToken');
-    if (!token) return; // Não pode salvar se estiver deslogado
-
     try {
       // Usamos o endpoint que já existe
-      await axios.put(`${API_URL}/api/users/me`, 
-        { preferencia_tema: novoModo },
-        // Precisamos garantir que o token seja enviado nesta chamada
-        { headers: { Authorization: `Bearer ${token}` } } 
-      );
-    } catch (error) {
-      console.error("Falha ao salvar preferência de tema:", error);
+      await api.put('/api/users/me', { preferencia_tema: novoModo });
+    } catch {
+      // Pode falhar em usuário não autenticado; mantém somente persistência local
     }
   };
   

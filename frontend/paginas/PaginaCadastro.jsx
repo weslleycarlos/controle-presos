@@ -1,10 +1,9 @@
 import React, { useState, forwardRef } from 'react';
-import axios from 'axios';
+import api from '../src/api';
 import { 
   Box, Typography, Paper, TextField, Button, Grid, 
   Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, FormHelperText
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
 import { IMaskInput } from 'react-imask'; // Importa a máscara
 import { validarCPF } from '../src/util/cpfValidator'; // Importa nosso validador
 
@@ -43,10 +42,6 @@ const ProcessoMascara = forwardRef(function ProcessoMascara(props, ref) {
 // --- Fim dos Componentes de Máscara ---
 
 
-// Lê a variável de ambiente VITE_API_URL definida no Railway (ou outro deploy).
-// Se ela não existir (estamos rodando localmente), usa o endereço local como padrão.
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-
 // Opções para os campos Select
 const opcoesTipoPrisao = [
   'Preventiva',
@@ -80,10 +75,42 @@ const initialState = {
 export function PaginaCadastro() {
   const [form, setForm] = useState(initialState);
   const [isSaving, setIsSaving] = useState(false);
+  const [isConsultandoProcesso, setIsConsultandoProcesso] = useState(false);
+  const [isConsultandoCpf, setIsConsultandoCpf] = useState(false);
+  const [ultimoCpfConsultado, setUltimoCpfConsultado] = useState(null);
   const [cpfError, setCpfError] = useState(false); // Estado para o erro do CPF
-  const navigate = useNavigate();
 
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+
+  const consultarCpfIntegracao = async (cpfNumerico) => {
+    if (!cpfNumerico || cpfNumerico.length !== 11) {
+      return;
+    }
+
+    setIsConsultandoCpf(true);
+    try {
+      const response = await api.post('/api/integracoes/cpf/consultar', { cpf: cpfNumerico });
+      setUltimoCpfConsultado(cpfNumerico);
+
+      if (!response.data?.sucesso || !response.data?.dados) {
+        return;
+      }
+
+      const dados = response.data.dados;
+      setForm((prev) => ({
+        ...prev,
+        nome_completo: prev.nome_completo || dados.nome_completo || prev.nome_completo,
+        nome_da_mae: prev.nome_da_mae || dados.nome_da_mae || prev.nome_da_mae,
+        data_nascimento: prev.data_nascimento || dados.data_nascimento || prev.data_nascimento,
+      }));
+
+      setSnack({ open: true, message: 'Dados pessoais preenchidos via integração de CPF.', severity: 'success' });
+    } catch {
+      // Não bloqueia o cadastro manual quando a integração falhar.
+    } finally {
+      setIsConsultandoCpf(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -92,7 +119,12 @@ export function PaginaCadastro() {
     if (name === 'cpf') {
       const soNumeros = value.replace(/[^\d]+/g, '');
       if (soNumeros.length === 11) {
-        setCpfError(!validarCPF(soNumeros)); // Se não for válido, cpfError = true
+        const cpfValido = validarCPF(soNumeros);
+        setCpfError(!cpfValido); // Se não for válido, cpfError = true
+
+        if (cpfValido && soNumeros !== ultimoCpfConsultado && !isConsultandoCpf) {
+          consultarCpfIntegracao(soNumeros);
+        }
       } else {
         setCpfError(false); // Limpa o erro se não tiver 11 dígitos
       }
@@ -140,7 +172,7 @@ export function PaginaCadastro() {
     };
 
     try {
-      const response = await axios.post(`${API_URL}/api/cadastro-completo`, payload);
+      const response = await api.post('/api/cadastro-completo', payload);
       setSnack({ open: true, message: `Preso '${response.data.nome_completo}' cadastrado com sucesso!`, severity: 'success' });
       setForm(initialState); // Limpa o formulário
       
@@ -161,9 +193,50 @@ export function PaginaCadastro() {
     }
   };
 
+  const handleBuscarIntegracaoProcesso = async () => {
+    if (!form.numero_processo) {
+      setSnack({ open: true, message: 'Informe o número do processo para consultar.', severity: 'warning' });
+      return;
+    }
+
+    setIsConsultandoProcesso(true);
+    try {
+      const response = await api.post('/api/integracoes/processos/consultar', {
+        numero_processo: form.numero_processo,
+        fontes: ['datajud', 'pje'],
+      });
+
+      const dados = response.data?.melhor_resultado;
+      if (!dados) {
+        setSnack({ open: true, message: 'Nenhum dado encontrado nas integrações externas.', severity: 'info' });
+        return;
+      }
+
+      const processo = dados.processo || dados;
+      setForm((prev) => ({
+        ...prev,
+        numero_processo: processo.numero_processo || prev.numero_processo,
+        status_processual: processo.status_processual || prev.status_processual,
+        tipo_prisao: processo.tipo_prisao || prev.tipo_prisao,
+        data_prisao: processo.data_prisao || prev.data_prisao,
+        local_segregacao: processo.local_segregacao || prev.local_segregacao,
+      }));
+
+      setSnack({ open: true, message: 'Dados do processo carregados da integração.', severity: 'success' });
+    } catch (error) {
+      setSnack({
+        open: true,
+        message: error.response?.data?.detail || 'Falha ao consultar integração externa.',
+        severity: 'error'
+      });
+    } finally {
+      setIsConsultandoProcesso(false);
+    }
+  };
+
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: '800', color: '#333', mb: 3 }}>
+      <Typography variant="h4" sx={{ fontWeight: '800', color: 'text.primary', mb: 3 }}>
         Novo Cadastro de Preso
       </Typography>
 
@@ -210,6 +283,7 @@ export function PaginaCadastro() {
           InputProps={{
             inputComponent: CPFMascara, // Aplica a máscara
           }}
+          disabled={isConsultandoCpf}
         />
         <TextField 
           name="nome_da_mae"
@@ -251,6 +325,16 @@ export function PaginaCadastro() {
             inputComponent: ProcessoMascara, // Aplica a máscara
           }}
         />
+        <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-start' }}>
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={handleBuscarIntegracaoProcesso}
+            disabled={isConsultandoProcesso || !form.numero_processo}
+          >
+            {isConsultandoProcesso ? 'Consultando integrações...' : 'Buscar dados no PJe/DataJud'}
+          </Button>
+        </Box>
         
         {/* --- CAMPO SELECT (Tipo de Prisão) --- */}
         <FormControl fullWidth>

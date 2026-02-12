@@ -1,16 +1,42 @@
-# React + Vite
+# Frontend - Sistema de Controle de Presos
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend SPA em React + Vite para gestão de presos, processos e alertas.
 
-Currently, two official plugins are available:
+## Requisitos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js 20.19+ (ou 22.12+)
+- npm 10+
 
-## React Compiler
+## Ambiente
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Copie o arquivo de exemplo:
 
-## Expanding the ESLint configuration
+```bash
+copy .env.example .env.local   # Windows
+# cp .env.example .env.local   # Linux/macOS
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Variável suportada:
+
+- `VITE_API_URL`: URL base do backend FastAPI
+- Importante: mantenha o mesmo host no frontend e backend (`localhost` com `localhost` ou `127.0.0.1` com `127.0.0.1`) para a sessão por cookie funcionar sem `401`.
+
+## Execução
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Observações de autenticação
+
+- A sessão é baseada em cookie HttpOnly definido pelo backend.
+- O cliente HTTP usa `withCredentials: true`.
+- Requisições mutáveis enviam automaticamente `X-CSRF-Token` via interceptor.

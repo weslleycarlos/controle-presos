@@ -1,6 +1,5 @@
 import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
-import axios from 'axios';
 import { Box, CircularProgress } from '@mui/material';
 import { useAuth } from './AuthContext';
 
@@ -15,16 +14,6 @@ import { PaginaPerfil } from '../paginas/PaginaPerfil';
 import { PaginaAdminUsuarios } from '../paginas/PaginaAdminUsuarios';
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
-
-// Pega o token salvo no navegador
-const token = localStorage.getItem('authToken');
-let estaLogado = false;
-
-if (token) {
-  // Se temos um token, dizemos ao Axios para usá-lo em todas as requisições
-  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  estaLogado = true;
-}
 
 // Elemento de Rota Protegida (mesmo de antes)
 const RotaProtegida = () => {
