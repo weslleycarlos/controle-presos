@@ -101,6 +101,7 @@ npm run dev
 
 - Login em `POST /api/token` cria cookie HttpOnly de sessão.
 - Frontend usa `withCredentials: true` e header CSRF (`X-CSRF-Token`) automaticamente.
+- Em produção, cookies são emitidos com `SameSite=None` + `Secure` para funcionar com frontend e backend em domínios diferentes.
 - Em produção, `SECRET_KEY` fraca/ausente bloqueia inicialização do backend.
 
 ## Integração PJe/DataJud (status atual)

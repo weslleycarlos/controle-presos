@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 AUTH_COOKIE_NAME = "access_token"
 CSRF_COOKIE_NAME = "csrf_token"
 IS_PRODUCTION = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() in {"production", "prod"}
+COOKIE_SAMESITE = "none" if IS_PRODUCTION else "lax"
 
 
 def _validar_cron_secret(request: Request):
@@ -257,7 +258,7 @@ def login_for_access_token(
         value=access_token,
         httponly=True,
         secure=IS_PRODUCTION,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -266,7 +267,7 @@ def login_for_access_token(
         value=csrf_token,
         httponly=False,
         secure=IS_PRODUCTION,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -289,7 +290,7 @@ def get_csrf_token(request: Request, response: Response):
         value=csrf_token,
         httponly=False,
         secure=IS_PRODUCTION,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
