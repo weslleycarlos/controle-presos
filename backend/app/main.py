@@ -51,6 +51,60 @@ def _validar_cron_secret(request: Request):
     if not token or not secrets.compare_digest(token, cron_secret):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autorizado para execução do job.")
 
+
+def _bootstrap_admin_if_configured():
+    auto_bootstrap = os.getenv("AUTO_BOOTSTRAP_ADMIN", "false").lower() in {"1", "true", "yes", "on"}
+    if not auto_bootstrap:
+        return
+
+    admin_nome = (os.getenv("FIRST_ADMIN_NOME") or "").strip()
+    admin_cpf = (os.getenv("FIRST_ADMIN_CPF") or "").strip()
+    admin_email = (os.getenv("FIRST_ADMIN_EMAIL") or "").strip()
+    admin_senha = os.getenv("FIRST_ADMIN_SENHA") or ""
+
+    if not admin_nome or not admin_cpf or not admin_email or not admin_senha:
+        logger.warning("AUTO_BOOTSTRAP_ADMIN ativo, mas FIRST_ADMIN_* incompleto. Bootstrap ignorado.")
+        return
+
+    if len(admin_cpf) != 11 or not admin_cpf.isdigit():
+        logger.warning("FIRST_ADMIN_CPF inválido. Bootstrap ignorado.")
+        return
+
+    if len(admin_senha) < 8:
+        logger.warning("FIRST_ADMIN_SENHA precisa ter no mínimo 8 caracteres. Bootstrap ignorado.")
+        return
+
+    db: Session = SessionLocal()
+    try:
+        admins_existentes = db.query(models.User).filter(models.User.role == "admin").count()
+        if admins_existentes > 0:
+            logger.info("Bootstrap de admin ignorado: já existe usuário admin.")
+            return
+
+        usuario_existente = crud.get_user_by_cpf(db, cpf=admin_cpf)
+        if usuario_existente:
+            usuario_existente.role = "admin"
+            usuario_existente.is_active = True
+            db.commit()
+            logger.info("Bootstrap: usuário existente promovido para admin.")
+            return
+
+        admin_schema = schemas.UserCreate(
+            nome_completo=admin_nome,
+            cpf=admin_cpf,
+            email=admin_email,
+            password=admin_senha,
+            role="admin",
+            preferencia_tema="light",
+        )
+        crud.create_user(db=db, user=admin_schema)
+        logger.info("Bootstrap: primeiro admin criado com sucesso.")
+    except Exception:
+        db.rollback()
+        logger.exception("Falha no bootstrap automático do primeiro admin")
+    finally:
+        db.close()
+
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
 # Lista de "origens" (endereços) que podem acessar este backend
 origins = [
@@ -496,6 +550,8 @@ def start_scheduler():
     """
     Inicia o Scheduler quando o FastAPI é iniciado.
     """
+    _bootstrap_admin_if_configured()
+
     if os.getenv("VERCEL"):
         logger.info("Ambiente Vercel detectado: scheduler desativado.")
         return

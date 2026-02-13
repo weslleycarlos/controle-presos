@@ -54,12 +54,15 @@ Variáveis principais do backend:
 - `PJE_API_URL` / `PJE_API_TOKEN`: integração PJe (opcional)
 - `CPF_API_URL` / `CPF_API_TOKEN`: integração para consulta de dados pessoais por CPF (opcional)
 - `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` / `SMTP_USE_TLS`: envio de alertas por e-mail (opcional)
+- `AUTO_BOOTSTRAP_ADMIN`: se `true`, cria/promove o primeiro admin no startup usando `FIRST_ADMIN_*` (somente se ainda não existir admin)
 
 Crie o primeiro admin:
 
 ```bash
 python create_first_admin.py
 ```
+
+Em deploy (ex.: Vercel), você pode evitar execução manual ativando `AUTO_BOOTSTRAP_ADMIN=true` e preenchendo `FIRST_ADMIN_*`. Após a criação inicial, recomenda-se desativar (`false`) e remover `FIRST_ADMIN_SENHA` das variáveis de ambiente.
 
 Suba o backend:
 
