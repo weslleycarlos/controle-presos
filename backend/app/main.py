@@ -154,7 +154,14 @@ async def csrf_protection_middleware(request: Request, call_next):
             csrf_header = request.headers.get("X-CSRF-Token")
             if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
                 return JSONResponse(status_code=403, content={"detail": "CSRF token inválido."})
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if IS_PRODUCTION:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
 
 async def get_current_user(
     request: Request,

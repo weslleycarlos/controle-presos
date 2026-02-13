@@ -30,7 +30,7 @@ else:
         logger.warning("SECRET_KEY de desenvolvimento com menos de 32 caracteres.")
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8 # 8 horas
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 2 # 2 horas
 
 # --- Configuração de Senha ---
 # Usamos bcrypt para "hashear" as senhas
