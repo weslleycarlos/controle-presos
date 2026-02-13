@@ -35,6 +35,11 @@ npm run build
 npm run preview
 ```
 
+## Deploy na Vercel
+
+- O projeto já inclui `frontend/vercel.json` com rewrite para SPA.
+- Isso garante que rotas como `/login`, `/perfil` e `/alertas` funcionem ao acessar/atualizar a URL diretamente.
+
 ## Observações de autenticação
 
 - A sessão é baseada em cookie HttpOnly definido pelo backend.

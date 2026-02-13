@@ -7,7 +7,7 @@ from .database import SessionLocal, engine, get_db
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
@@ -78,6 +78,11 @@ app.add_middleware(
 # --- FIM DA CONFIGURAÇÃO DO CORS ---
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect_to_docs():
+    return RedirectResponse(url="/docs")
 
 
 @app.middleware("http")

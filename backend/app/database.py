@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # 1. Carrega as variáveis de ambiente do arquivo .env
@@ -11,7 +12,14 @@ load_dotenv()
 #    os.getenv('DATABASE_URL') vai ler a variável.
 #    Se ela NÃO EXISTIR, ele usa o valor padrão (nosso SQLite)
 DEFAULT_SQLITE_URL = "sqlite:///./local.db"
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL)
+raw_database_url = os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL)
+SQLALCHEMY_DATABASE_URL = raw_database_url.strip()
+
+if (
+    (SQLALCHEMY_DATABASE_URL.startswith('"') and SQLALCHEMY_DATABASE_URL.endswith('"'))
+    or (SQLALCHEMY_DATABASE_URL.startswith("'") and SQLALCHEMY_DATABASE_URL.endswith("'"))
+):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL[1:-1].strip()
 
 # 3. Lógica específica para SQLite vs. PostgreSQL
 connect_args = {}
@@ -24,9 +32,17 @@ else:
     print("--- INICIANDO COM BANCO DE DADOS POSTGRESQL (PRODUÇÃO) ---")
 
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args=connect_args
-)
+try:
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args=connect_args
+    )
+except ArgumentError as exc:
+    raise RuntimeError(
+        "DATABASE_URL inválida no .env. Exemplos válidos: "
+        "sqlite:///./local.db | "
+        "postgresql://usuario:senha@host:5432/banco?sslmode=require"
+    ) from exc
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
