@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../src/api';
+import api, { setAuthToken } from '../src/api';
 import { useAuth } from '../src/AuthContext';
 
 import { 
@@ -26,9 +26,14 @@ export function PaginaLogin() {
     params.append('password', senha);
 
     try {
-      await api.post('/api/token', params, {
+      const response = await api.post('/api/token', params, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
+
+      const accessToken = response.data?.access_token;
+      if (accessToken) {
+        setAuthToken(accessToken);
+      }
       
       await login();
       navigate('/'); // Navega para o Dashboard

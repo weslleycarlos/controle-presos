@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import api from './api';
+import api, { getAuthToken, clearAuthToken } from './api';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 
@@ -17,7 +17,7 @@ export function ProvedorAuth({ children }) {
     try {
       const response = await api.get('/api/users/me');
       setUsuario(response.data);
-      setToken('cookie');
+      setToken(getAuthToken() ? 'bearer' : 'cookie');
       localStorage.setItem('tema', response.data.preferencia_tema || 'light');
       await api.get('/api/csrf-token');
     } catch {
@@ -45,6 +45,7 @@ export function ProvedorAuth({ children }) {
     } catch {
       // Ignora erro de logout remoto para garantir limpeza local
     }
+    clearAuthToken();
     localStorage.removeItem('tema'); // Limpa o tema
     setToken(null);
     setUsuario(null);
