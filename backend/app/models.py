@@ -64,6 +64,7 @@ class TipoEventoEnum(str, enum.Enum):
     audiencia = "audiencia"
     reavaliacao_preventiva = "reavaliacao_preventiva"
     prazo_recurso = "prazo_recurso"
+    remessa_tribunal = "remessa_tribunal"
     outro = "outro"
 
 

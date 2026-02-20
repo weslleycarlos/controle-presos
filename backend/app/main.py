@@ -397,6 +397,31 @@ def create_evento_for_processo(
     db.refresh(novo_evento)
     return novo_evento
 
+@app.put("/api/eventos/{evento_id}", response_model=schemas.Evento, tags=["Eventos"])
+def update_evento(
+    evento_id: int, 
+    evento_update: schemas.EventoCreate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_evento = crud.update_evento(db=db, evento_id=evento_id, evento_update=evento_update)
+    if not db_evento:
+        raise HTTPException(status_code=404, detail="Evento não encontrado")
+    _sincronizar_alertas_status(db)
+    return db_evento
+
+@app.delete("/api/eventos/{evento_id}", status_code=204, tags=["Eventos"])
+def delete_evento(
+    evento_id: int, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_evento = crud.delete_evento(db=db, evento_id=evento_id)
+    if not db_evento:
+        raise HTTPException(status_code=404, detail="Evento não encontrado")
+    _sincronizar_alertas_status(db)
+    return None
+
 # --- Endpoint de Alerta (O MVP do seu sistema de alertas) ---
 # (A lógica de background ainda não está aqui, mas o endpoint de consulta está)
 
@@ -412,7 +437,6 @@ def get_proximos_alertas(
     _sincronizar_alertas_status(db)
     agora = datetime.now(timezone.utc)
     eventos = db.query(models.Evento).filter(
-        models.Evento.data_evento > agora,
         models.Evento.alerta_status.in_([models.AlertaStatusEnum.pendente, models.AlertaStatusEnum.disparado])
     ).order_by(models.Evento.data_evento.asc()).limit(50).all()
     
@@ -432,7 +456,6 @@ def _sincronizar_alertas_status(db: Session) -> list[models.Evento]:
     eventos_para_alertar = db.query(models.Evento).options(
         joinedload(models.Evento.processo).joinedload(models.Processo.preso)
     ).filter(
-        models.Evento.data_evento > agora,
         models.Evento.data_evento <= limite_dias,
         models.Evento.alerta_status == models.AlertaStatusEnum.pendente
     ).all()
@@ -594,8 +617,7 @@ def get_alertas_ativos(
     agora = datetime.now(timezone.utc)
     
     base_query = db.query(models.Evento).filter(
-        models.Evento.alerta_status == models.AlertaStatusEnum.disparado,
-        models.Evento.data_evento > agora
+        models.Evento.alerta_status == models.AlertaStatusEnum.disparado
     )
 
     total_alertas = base_query.count()
@@ -608,8 +630,7 @@ def get_alertas_ativos(
     query = db.query(models.Evento).options(
         joinedload(models.Evento.processo).joinedload(models.Processo.preso)
     ).filter(
-        models.Evento.alerta_status == models.AlertaStatusEnum.disparado,
-        models.Evento.data_evento > agora
+        models.Evento.alerta_status == models.AlertaStatusEnum.disparado
     ).order_by(
         models.Evento.data_evento.asc()
     )

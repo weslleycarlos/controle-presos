@@ -125,6 +125,25 @@ def create_evento(db: Session, evento: schemas.EventoCreate, processo_id: int):
     db.refresh(db_evento)
     return db_evento
 
+def update_evento(db: Session, evento_id: int, evento_update: schemas.EventoCreate):
+    db_evento = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
+    if not db_evento:
+        return None
+    update_data = evento_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_evento, key, value)
+    db.commit()
+    db.refresh(db_evento)
+    return db_evento
+    
+def delete_evento(db: Session, evento_id: int):
+    db_evento = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
+    if not db_evento:
+        return None
+    db.delete(db_evento)
+    db.commit()
+    return db_evento
+
 
 # ... (imports existentes) ...
 

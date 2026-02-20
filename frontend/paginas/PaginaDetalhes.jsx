@@ -3,6 +3,8 @@ import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import api from '../src/api';
 import { formatarData } from '../src/util/formatarData';
 import { tiposDeEvento } from '../src/util/tiposEvento';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { PainelInfoPreso } from '../src/componentes/detalhes/PainelInfoPreso';
 import { ListaProcessos } from '../src/componentes/detalhes/ListaProcessos';
 import {
@@ -108,6 +110,7 @@ export function PaginaDetalhes() {
   // --- Estados do Modal de Evento ---
   const [modalEventoOpen, setModalEventoOpen] = useState(false);
   const [processoSelecionadoId, setProcessoSelecionadoId] = useState(null);
+  const [eventoEditandoId, setEventoEditandoId] = useState(null);
   const [novoEventoForm, setNovoEventoForm] = useState(eventoInitialState);
 
   // --- Estados dos Modais de Edição/Delete ---
@@ -118,6 +121,8 @@ export function PaginaDetalhes() {
   const [formEditarProcesso, setFormEditarProcesso] = useState(null);
 
   const [modalDeletarOpen, setModalDeletarOpen] = useState(false);
+  const [modalDeletarEventoOpen, setModalDeletarEventoOpen] = useState(false);
+  const [eventoParaDeletarId, setEventoParaDeletarId] = useState(null);
 
   // --- Estado do Snackbar ---
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
@@ -158,20 +163,60 @@ export function PaginaDetalhes() {
     setNovoEventoForm(eventoInitialState);
     setModalEventoOpen(true);
   };
-  const handleFecharModalEvento = () => setModalEventoOpen(false);
+  const handleFecharModalEvento = () => {
+    setModalEventoOpen(false);
+    setEventoEditandoId(null);
+  };
   const handleChangeEvento = (e) => {
     setNovoEventoForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
   const handleSalvarEvento = async (e) => {
     e.preventDefault();
     try {
-      await api.post(`/api/processos/${processoSelecionadoId}/eventos/`, novoEventoForm);
-      setSnack({ open: true, message: "Evento adicionado com sucesso!", severity: 'success' });
+      if (eventoEditandoId) {
+        await api.put(`/api/eventos/${eventoEditandoId}`, novoEventoForm);
+        setSnack({ open: true, message: "Evento atualizado com sucesso!", severity: 'success' });
+      } else {
+        await api.post(`/api/processos/${processoSelecionadoId}/eventos/`, novoEventoForm);
+        setSnack({ open: true, message: "Evento adicionado com sucesso!", severity: 'success' });
+      }
       handleFecharModalEvento();
       fetchDetalhes(); // Recarrega
     } catch (error) {
       setSnack({ open: true, message: "Erro ao salvar evento.", severity: 'error' });
     }
+  };
+
+  const handleAbrirEdicaoEvento = (evento, processoId) => {
+    setProcessoSelecionadoId(processoId);
+    setEventoEditandoId(evento.id);
+    setNovoEventoForm({
+      tipo_evento: evento.tipo_evento,
+      data_evento: evento.data_evento ? evento.data_evento.substring(0, 16) : '',
+      descricao: evento.descricao || ''
+    });
+    setModalEventoOpen(true);
+  };
+
+  const handleDeletarEvento = (eventoId) => {
+    setEventoParaDeletarId(eventoId);
+    setModalDeletarEventoOpen(true);
+  };
+
+  const handleConfirmarDelecaoEvento = async () => {
+    try {
+      await api.delete(`/api/eventos/${eventoParaDeletarId}`);
+      setSnack({ open: true, message: "Evento excluído com sucesso!", severity: 'success' });
+      setModalDeletarEventoOpen(false);
+      fetchDetalhes();
+    } catch (error) {
+      setSnack({ open: true, message: "Erro ao excluir evento.", severity: 'error' });
+    }
+  };
+
+  const handleFecharModalDeletarEvento = () => {
+    setModalDeletarEventoOpen(false);
+    setEventoParaDeletarId(null);
   };
 
   // --- Handlers (Editar Preso) ---
@@ -279,7 +324,7 @@ export function PaginaDetalhes() {
     });
 
     const escapeCsv = (valor) => `"${String(valor ?? '').replace(/"/g, '""')}"`;
-    const csvContent = linhas.map((linha) => linha.map(escapeCsv).join(';')).join('\n');
+    const csvContent = "\uFEFF" + linhas.map((linha) => linha.map(escapeCsv).join(';')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
 
@@ -295,6 +340,85 @@ export function PaginaDetalhes() {
     URL.revokeObjectURL(url);
 
     setSnack({ open: true, message: 'Relatório exportado com sucesso.', severity: 'success' });
+  };
+
+  const handleExportarPDF = () => {
+    if (!preso) {
+      setSnack({ open: true, message: 'Nenhum dado disponível para exportação.', severity: 'warning' });
+      return;
+    }
+
+    const doc = new jsPDF();
+    autoTable(doc, {
+      didDrawPage: function (data) {
+        // ...
+      }
+    }); // Mock init to get types right if needed
+    // Configurações e Título
+    doc.setFontSize(16);
+    doc.text(`Relatório do Preso: ${preso.nome_completo || 'N/A'}`, 14, 20);
+
+    doc.setFontSize(12);
+    doc.text(`CPF: ${preso.cpf || 'Não informado'}`, 14, 28);
+    doc.text(`Mãe: ${preso.nome_da_mae || 'Não informado'}`, 14, 34);
+    doc.text(`Data de Nascimento: ${preso.data_nascimento ? formatarData(preso.data_nascimento) : 'Não informada'}`, 14, 40);
+
+    let startY = 50;
+
+    (preso.processos || []).forEach((processo, index) => {
+      doc.setFontSize(14);
+      doc.text(`Processo ${index + 1}: ${processo.numero_processo || 'S/N'}`, 14, startY);
+      startY += 8;
+
+      const processoDados = [
+        ['Status', processo.status_processual || ''],
+        ['Tipo de Prisão', processo.tipo_prisao || ''],
+        ['Data da Prisão', processo.data_prisao ? formatarData(processo.data_prisao) : ''],
+        ['Local', processo.local_segregacao || '']
+      ];
+
+      autoTable(doc, {
+        startY: startY,
+        head: [['Campo', 'Valor']],
+        body: processoDados,
+        theme: 'striped',
+        headStyles: { fillColor: [41, 128, 185] },
+        margin: { left: 14 }
+      });
+
+      startY = doc.lastAutoTable.finalY + 10;
+
+      if (processo.eventos && processo.eventos.length > 0) {
+        doc.setFontSize(12);
+        doc.text('Eventos do Processo:', 14, startY);
+        startY += 6;
+
+        const eventosDados = processo.eventos.map(evento => [
+          tiposDeEvento[evento.tipo_evento] || evento.tipo_evento || '',
+          evento.data_evento ? formatarData(evento.data_evento, true) : '',
+          evento.alerta_status || '',
+          evento.descricao || ''
+        ]);
+
+        autoTable(doc, {
+          startY: startY,
+          head: [['Tipo', 'Data', 'Status', 'Descrição']],
+          body: eventosDados,
+          theme: 'grid',
+          headStyles: { fillColor: [100, 100, 100] },
+          margin: { left: 14 }
+        });
+
+        startY = doc.lastAutoTable.finalY + 15;
+      } else {
+        startY += 5;
+      }
+    });
+
+    const nomeSeguro = (preso.nome_completo || 'preso').trim().toLowerCase().replace(/[^a-z0-9]+/gi, '_');
+    doc.save(`relatorio_${nomeSeguro}.pdf`);
+
+    setSnack({ open: true, message: 'Relatório em PDF exportado com sucesso.', severity: 'success' });
   };
 
   // --- Handlers do Snackbar ---
@@ -326,31 +450,41 @@ export function PaginaDetalhes() {
         <Typography color="text.primary">{preso.nome_completo}</Typography>
       </Breadcrumbs>
 
-      {/* 2. Layout Principal (Grid) */}
-      <Grid container spacing={3}>
+      {/* 2. Layout Principal (Grid CSS robusto) */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: '1fr 2.5fr' },
+          gap: 3,
+          alignItems: 'start'
+        }}
+      >
 
         {/* Coluna da Esquerda (Info Pessoal) */}
-        <Grid item xs={12} md={4}>
+        <Box sx={{ minWidth: 0 }}>
           <PainelInfoPreso
             preso={preso}
             formatarData={formatarData}
             onEditar={handleAbrirModalEditarPreso}
             onDeletar={handleAbrirModalDeletar}
             onExportar={handleExportarRelatorio}
+            onExportarPDF={handleExportarPDF}
           />
-        </Grid>
+        </Box>
 
         {/* Coluna da Direita (Processos e Eventos) */}
-        <Grid item xs={12} md={8}>
+        <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
           <ListaProcessos
             processos={preso.processos}
             formatarData={formatarData}
             tiposDeEvento={tiposDeEvento}
             onEditarProcesso={handleAbrirModalEditarProcesso}
             onAbrirEvento={handleAbrirModalEvento}
+            onEditarEvento={handleAbrirEdicaoEvento}
+            onDeletarEvento={handleDeletarEvento}
           />
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       {/* --- ÁREA DE MODAIS --- */}
 
@@ -365,49 +499,52 @@ export function PaginaDetalhes() {
         <Fade in={modalEventoOpen}>
           <Box sx={styleModal} component="form" onSubmit={handleSalvarEvento}>
             <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Adicionar Novo Evento
+              {eventoEditandoId ? "Editar Evento" : "Adicionar Novo Evento"}
             </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <FormControl fullWidth required>
-                  <InputLabel id="tipo-evento-label">Tipo de Evento</InputLabel>
-                  <Select
-                    labelId="tipo-evento-label"
-                    name="tipo_evento"
-                    value={novoEventoForm.tipo_evento}
-                    label="Tipo de Evento"
-                    onChange={handleChangeEvento}
-                  >
-                    {Object.entries(tiposDeEvento).map(([chave, valor]) => (
-                      <MenuItem key={chave} value={chave}>{valor}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  name="data_evento"
-                  label="Data e Hora do Evento"
-                  type="datetime-local"
-                  value={novoEventoForm.data_evento}
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                gap: 2,
+                mt: 1
+              }}
+            >
+              <FormControl fullWidth required>
+                <InputLabel id="tipo-evento-label">Tipo de Evento</InputLabel>
+                <Select
+                  labelId="tipo-evento-label"
+                  name="tipo_evento"
+                  value={novoEventoForm.tipo_evento}
+                  label="Tipo de Evento"
                   onChange={handleChangeEvento}
-                  fullWidth
-                  required
-                  InputLabelProps={{ shrink: true }}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  name="descricao"
-                  label="Descrição (Opcional)"
-                  value={novoEventoForm.descricao}
-                  onChange={handleChangeEvento}
-                  fullWidth
-                  multiline
-                  rows={3}
-                />
-              </Grid>
-            </Grid>
+                >
+                  {Object.entries(tiposDeEvento).map(([chave, valor]) => (
+                    <MenuItem key={chave} value={chave}>{valor}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                name="data_evento"
+                label="Data e Hora do Evento"
+                type="datetime-local"
+                value={novoEventoForm.data_evento}
+                onChange={handleChangeEvento}
+                fullWidth
+                required
+                InputLabelProps={{ shrink: true }}
+              />
+
+              <TextField
+                name="descricao"
+                label="Descrição (Opcional)"
+                value={novoEventoForm.descricao}
+                onChange={handleChangeEvento}
+                fullWidth
+                multiline
+                rows={3}
+              />
+            </Box>
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
               <Button onClick={handleFecharModalEvento} variant="text" color="secondary">
                 Cancelar
@@ -428,20 +565,27 @@ export function PaginaDetalhes() {
               <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
                 Editar Dados Pessoais
               </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <TextField name="nome_completo" label="Nome Completo" value={formEditarPreso.nome_completo} onChange={handleChangeEditarPreso} fullWidth required />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField name="cpf" label="CPF" value={formEditarPreso.cpf} onChange={handleChangeEditarPreso} fullWidth InputProps={{ inputComponent: CPFMascara }} />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField name="data_nascimento" label="Data de Nasc." value={formEditarPreso.data_nascimento} onChange={handleChangeEditarPreso} fullWidth type="date" InputLabelProps={{ shrink: true }} />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField name="nome_da_mae" label="Nome da Mãe" value={formEditarPreso.nome_da_mae} onChange={handleChangeEditarPreso} fullWidth />
-                </Grid>
-              </Grid>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                  gap: 2,
+                  mt: 1
+                }}
+              >
+                <TextField
+                  name="nome_completo"
+                  label="Nome Completo"
+                  value={formEditarPreso.nome_completo}
+                  onChange={handleChangeEditarPreso}
+                  fullWidth
+                  required
+                  sx={{ gridColumn: '1 / -1' }}
+                />
+                <TextField name="cpf" label="CPF" value={formEditarPreso.cpf} onChange={handleChangeEditarPreso} fullWidth InputProps={{ inputComponent: CPFMascara }} />
+                <TextField name="data_nascimento" label="Data de Nasc." value={formEditarPreso.data_nascimento} onChange={handleChangeEditarPreso} fullWidth type="date" InputLabelProps={{ shrink: true }} />
+                <TextField name="nome_da_mae" label="Nome da Mãe" value={formEditarPreso.nome_da_mae} onChange={handleChangeEditarPreso} fullWidth sx={{ gridColumn: '1 / -1' }} />
+              </Box>
               <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                 <Button onClick={handleFecharModalEditarPreso} variant="text" color="secondary">Cancelar</Button>
                 <Button type="submit" variant="contained">Salvar Alterações</Button>
@@ -459,53 +603,52 @@ export function PaginaDetalhes() {
               <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
                 Editar Processo
               </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <TextField name="numero_processo" label="Nº do Processo" value={formEditarProcesso.numero_processo} onChange={handleChangeEditarProcesso} fullWidth required InputProps={{ inputComponent: ProcessoMascara }} />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth><InputLabel>Tipo da Prisão</InputLabel>
-                    <Select name="tipo_prisao" value={formEditarProcesso.tipo_prisao} label="Tipo da Prisão" onChange={handleChangeEditarProcesso}>
-                      {opcoesTipoPrisao.map(op => <MenuItem key={op} value={op}>{op}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Autocomplete
-                    freeSolo
-                    options={opcoesStatusProcessual}
-                    value={formEditarProcesso.status_processual || ''}
-                    onChange={(event, newValue) => {
-                      setFormEditarProcesso(prev => ({ ...prev, status_processual: newValue }));
-                    }}
-                    onInputChange={(event, newInputValue) => {
-                      setFormEditarProcesso(prev => ({ ...prev, status_processual: newInputValue }));
-                    }}
-                    renderInput={(params) => (
-                      <TextField {...params} label="Status Processual" variant="outlined" />
-                    )}
-                    fullWidth
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField name="data_prisao" label="Data da Prisão" value={formEditarProcesso.data_prisao} onChange={handleChangeEditarProcesso} fullWidth type="date" InputLabelProps={{ shrink: true }} />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField name="local_segregacao" label="Local de Segregação" value={formEditarProcesso.local_segregacao} onChange={handleChangeEditarProcesso} fullWidth />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField name="numero_da_guia" label="Número da Guia (Opcional)" value={formEditarProcesso.numero_da_guia || ''} onChange={handleChangeEditarProcesso} fullWidth />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth><InputLabel>Tipo de Guia (Opcional)</InputLabel>
-                    <Select name="tipo_guia" value={formEditarProcesso.tipo_guia || ''} label="Tipo de Guia (Opcional)" onChange={handleChangeEditarProcesso}>
-                      <MenuItem value=""><em>Nenhuma</em></MenuItem>
-                      <MenuItem value="Provisória">Provisória</MenuItem>
-                      <MenuItem value="Definitiva">Definitiva</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-              </Grid>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr',
+                  gap: 2,
+                  mt: 1
+                }}
+              >
+                <TextField name="numero_processo" label="Nº do Processo" value={formEditarProcesso.numero_processo} onChange={handleChangeEditarProcesso} fullWidth required InputProps={{ inputComponent: ProcessoMascara }} />
+
+                <FormControl fullWidth><InputLabel>Tipo da Prisão</InputLabel>
+                  <Select name="tipo_prisao" value={formEditarProcesso.tipo_prisao} label="Tipo da Prisão" onChange={handleChangeEditarProcesso}>
+                    {opcoesTipoPrisao.map(op => <MenuItem key={op} value={op}>{op}</MenuItem>)}
+                  </Select>
+                </FormControl>
+
+                <Autocomplete
+                  freeSolo
+                  options={opcoesStatusProcessual}
+                  value={formEditarProcesso.status_processual || ''}
+                  onChange={(event, newValue) => {
+                    setFormEditarProcesso(prev => ({ ...prev, status_processual: newValue }));
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setFormEditarProcesso(prev => ({ ...prev, status_processual: newInputValue }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Status Processual" variant="outlined" />
+                  )}
+                  fullWidth
+                />
+
+                <TextField name="data_prisao" label="Data da Prisão" value={formEditarProcesso.data_prisao} onChange={handleChangeEditarProcesso} fullWidth type="date" InputLabelProps={{ shrink: true }} />
+
+                <TextField name="local_segregacao" label="Local de Segregação" value={formEditarProcesso.local_segregacao} onChange={handleChangeEditarProcesso} fullWidth />
+
+                <TextField name="numero_da_guia" label="Número da Guia (Opcional)" value={formEditarProcesso.numero_da_guia || ''} onChange={handleChangeEditarProcesso} fullWidth />
+
+                <FormControl fullWidth><InputLabel>Tipo de Guia (Opcional)</InputLabel>
+                  <Select name="tipo_guia" value={formEditarProcesso.tipo_guia || ''} label="Tipo de Guia (Opcional)" onChange={handleChangeEditarProcesso}>
+                    <MenuItem value=""><em>Nenhuma</em></MenuItem>
+                    <MenuItem value="Provisória">Provisória</MenuItem>
+                    <MenuItem value="Definitiva">Definitiva</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
               <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                 <Button onClick={handleFecharModalEditarProcesso} variant="text" color="secondary">Cancelar</Button>
                 <Button type="submit" variant="contained">Salvar Alterações</Button>
@@ -531,6 +674,25 @@ export function PaginaDetalhes() {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleFecharModalDeletar} color="secondary">Cancelar</Button>
           <Button onClick={handleConfirmarDelecao} variant="contained" color="error" autoFocus>
+            Confirmar Exclusão
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal: Confirmação de Deleção de Evento */}
+      <Dialog
+        open={modalDeletarEventoOpen}
+        onClose={handleFecharModalDeletarEvento}
+      >
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Confirmar Exclusão de Evento</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Você tem certeza que deseja excluir permanentemente este evento?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleFecharModalDeletarEvento} color="secondary">Cancelar</Button>
+          <Button onClick={handleConfirmarDelecaoEvento} variant="contained" color="error" autoFocus>
             Confirmar Exclusão
           </Button>
         </DialogActions>

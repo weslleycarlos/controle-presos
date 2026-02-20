@@ -18,6 +18,7 @@ export function PainelInfoPreso({
   onEditar,
   onDeletar,
   onExportar,
+  onExportarPDF,
 }) {
   return (
     <Paper sx={{ p: 3, textAlign: 'center' }}>
@@ -42,7 +43,10 @@ export function PainelInfoPreso({
         <Button variant="contained" startIcon={<EditIcon />} onClick={onEditar}>
           Editar Dados Pessoais
         </Button>
-        <Button variant="outlined" onClick={onExportar}>Exportar Relatório</Button>
+        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+          <Button variant="outlined" onClick={onExportar}>Exportar CSV</Button>
+          <Button variant="outlined" color="secondary" onClick={onExportarPDF}>Exportar PDF</Button>
+        </Box>
         <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={onDeletar}>
           Deletar Cadastro
         </Button>

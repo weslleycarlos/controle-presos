@@ -2,5 +2,6 @@ export const tiposDeEvento = {
   audiencia: 'Audiência',
   reavaliacao_preventiva: 'Reavaliação de Prisão',
   prazo_recurso: 'Prazo de Recurso',
+  remessa_tribunal: 'Remessa para Tribunal',
   outro: 'Outro',
 };
