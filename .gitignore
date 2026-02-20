@@ -5,7 +5,8 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/*.pyc
 backend/**/*.pyc
-backend/.env          # Muito importante: Arquivo de senhas
+# Muito importante: Arquivo de senhas
+backend/.env
 backend/.env.local
 backend/.env.production
 backend/local.db      # Banco de dados SQLite local

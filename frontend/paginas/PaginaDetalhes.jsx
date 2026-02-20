@@ -9,7 +9,7 @@ import {
   Box, Typography, Grid, CircularProgress, Alert,
   Breadcrumbs, Link, Button,
   Modal, Fade, Backdrop, TextField, FormControl,
-  InputLabel, Select, MenuItem, Snackbar,
+  InputLabel, Select, MenuItem, Snackbar, Autocomplete,
   Dialog,
   DialogActions,
   DialogContent,
@@ -57,7 +57,7 @@ const opcoesStatusProcessual = [
 // Estado inicial do formulário do modal de evento
 const eventoInitialState = {
   tipo_evento: 'audiencia',
-  data_evento: '', 
+  data_evento: '',
   descricao: ''
 };
 
@@ -113,19 +113,19 @@ export function PaginaDetalhes() {
   // --- Estados dos Modais de Edição/Delete ---
   const [modalEditarPresoOpen, setModalEditarPresoOpen] = useState(false);
   const [formEditarPreso, setFormEditarPreso] = useState(null);
-  
+
   const [modalEditarProcessoOpen, setModalEditarProcessoOpen] = useState(false);
   const [formEditarProcesso, setFormEditarProcesso] = useState(null);
 
   const [modalDeletarOpen, setModalDeletarOpen] = useState(false);
-  
+
   // --- Estado do Snackbar ---
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
 
   // --- Funções de Busca ---
   const fetchDetalhes = useCallback(async () => {
     // Não mostra o loading de tela cheia se já temos dados (só no recarregamento)
-    if (!preso) { 
+    if (!preso) {
       setIsLoading(true);
     }
     setError('');
@@ -196,7 +196,7 @@ export function PaginaDetalhes() {
       setSnack({ open: true, message: "Erro ao atualizar dados.", severity: 'error' });
     }
   };
-  
+
   // --- Handlers (Editar Processo) ---
   const handleAbrirModalEditarProcesso = (processo) => {
     setFormEditarProcesso({
@@ -206,6 +206,8 @@ export function PaginaDetalhes() {
       tipo_prisao: processo.tipo_prisao || '',
       status_processual: processo.status_processual || '',
       local_segregacao: processo.local_segregacao || '',
+      numero_da_guia: processo.numero_da_guia || '',
+      tipo_guia: processo.tipo_guia || '',
     });
     setModalEditarProcessoOpen(true);
   };
@@ -326,7 +328,7 @@ export function PaginaDetalhes() {
 
       {/* 2. Layout Principal (Grid) */}
       <Grid container spacing={3}>
-        
+
         {/* Coluna da Esquerda (Info Pessoal) */}
         <Grid item xs={12} md={4}>
           <PainelInfoPreso
@@ -469,17 +471,39 @@ export function PaginaDetalhes() {
                   </FormControl>
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth><InputLabel>Status Processual</InputLabel>
-                    <Select name="status_processual" value={formEditarProcesso.status_processual} label="Status Processual" onChange={handleChangeEditarProcesso}>
-                      {opcoesStatusProcessual.map(op => <MenuItem key={op} value={op}>{op}</MenuItem>)}
-                    </Select>
-                  </FormControl>
+                  <Autocomplete
+                    freeSolo
+                    options={opcoesStatusProcessual}
+                    value={formEditarProcesso.status_processual || ''}
+                    onChange={(event, newValue) => {
+                      setFormEditarProcesso(prev => ({ ...prev, status_processual: newValue }));
+                    }}
+                    onInputChange={(event, newInputValue) => {
+                      setFormEditarProcesso(prev => ({ ...prev, status_processual: newInputValue }));
+                    }}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Status Processual" variant="outlined" />
+                    )}
+                    fullWidth
+                  />
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField name="data_prisao" label="Data da Prisão" value={formEditarProcesso.data_prisao} onChange={handleChangeEditarProcesso} fullWidth type="date" InputLabelProps={{ shrink: true }} />
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <TextField name="local_segregacao" label="Local de Segregação" value={formEditarProcesso.local_segregacao} onChange={handleChangeEditarProcesso} fullWidth />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField name="numero_da_guia" label="Número da Guia (Opcional)" value={formEditarProcesso.numero_da_guia || ''} onChange={handleChangeEditarProcesso} fullWidth />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth><InputLabel>Tipo de Guia (Opcional)</InputLabel>
+                    <Select name="tipo_guia" value={formEditarProcesso.tipo_guia || ''} label="Tipo de Guia (Opcional)" onChange={handleChangeEditarProcesso}>
+                      <MenuItem value=""><em>Nenhuma</em></MenuItem>
+                      <MenuItem value="Provisória">Provisória</MenuItem>
+                      <MenuItem value="Definitiva">Definitiva</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Grid>
               </Grid>
               <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
@@ -500,7 +524,7 @@ export function PaginaDetalhes() {
         <DialogContent>
           <DialogContentText>
             Você tem certeza que deseja deletar o cadastro de <strong>{preso.nome_completo}</strong>?
-            <br/><br/>
+            <br /><br />
             Esta ação é irreversível e irá apagar todos os processos e eventos associados.
           </DialogContentText>
         </DialogContent>
@@ -511,7 +535,7 @@ export function PaginaDetalhes() {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Snackbar (Alerta de Feedback) */}
       <Snackbar
         open={snack.open}

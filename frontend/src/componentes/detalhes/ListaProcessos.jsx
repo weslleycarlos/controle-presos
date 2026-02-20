@@ -68,6 +68,12 @@ export function ListaProcessos({
                   <Grid item xs={12} sm={6}>
                     <Typography variant="body2"><strong>Local:</strong> {proc.local_segregacao || 'N/A'}</Typography>
                   </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2"><strong>Número da Guia:</strong> {proc.numero_da_guia || 'N/A'}</Typography>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2"><strong>Tipo de Guia:</strong> {proc.tipo_guia || 'N/A'}</Typography>
+                  </Grid>
                 </Grid>
 
                 <Divider sx={{ my: 2 }} />

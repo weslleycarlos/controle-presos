@@ -1,9 +1,20 @@
-from sqlalchemy import Boolean, Column, Integer, String, Date, DateTime, ForeignKey, Text, Enum, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    Date,
+    DateTime,
+    ForeignKey,
+    Text,
+    Enum,
+    func,
+)
 from sqlalchemy.orm import relationship
 import enum
 
 # IMPORTANTE: Importe o 'engine' do database.py
-from .database import Base, engine 
+from .database import Base, engine
 # A LINHA COM ERRO FOI REMOVIDA DAQUI
 
 # --- Lógica de Timezone Híbrida ---
@@ -16,6 +27,7 @@ else:
     TimestampTZ = DateTime
 
 # ------------------------------------
+
 
 class User(Base):
     __tablename__ = "users"
@@ -32,7 +44,7 @@ class User(Base):
         "UserNotificationPreference",
         back_populates="user",
         uselist=False,
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
@@ -40,16 +52,20 @@ class UserNotificationPreference(Base):
     __tablename__ = "user_notification_preferences"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True
+    )
     receber_alertas_email = Column(Boolean, nullable=False, default=False)
 
     user = relationship("User", back_populates="notification_preference")
+
 
 class TipoEventoEnum(str, enum.Enum):
     audiencia = "audiencia"
     reavaliacao_preventiva = "reavaliacao_preventiva"
     prazo_recurso = "prazo_recurso"
     outro = "outro"
+
 
 class AlertaStatusEnum(str, enum.Enum):
     pendente = "pendente"
@@ -65,11 +81,14 @@ class Preso(Base):
     cpf = Column(String(11), unique=True, index=True, nullable=True)
     nome_da_mae = Column(String(255), nullable=True)
     data_nascimento = Column(Date, nullable=True)
-    
+
     # Aplicamos nosso tipo de data híbrido aqui
-    criado_em = Column(TimestampTZ, server_default=func.now()) 
-    
-    processos = relationship("Processo", back_populates="preso", cascade="all, delete-orphan")
+    criado_em = Column(TimestampTZ, server_default=func.now())
+
+    processos = relationship(
+        "Processo", back_populates="preso", cascade="all, delete-orphan"
+    )
+
 
 class Processo(Base):
     __tablename__ = "processos"
@@ -80,22 +99,31 @@ class Processo(Base):
     tipo_prisao = Column(String(100))
     data_prisao = Column(Date, nullable=True)
     local_segregacao = Column(String(255), nullable=True)
+    numero_da_guia = Column(String(50), nullable=True)
+    tipo_guia = Column(String(50), nullable=True)
     preso_id = Column(Integer, ForeignKey("presos.id"), nullable=False)
-    
+
     preso = relationship("Preso", back_populates="processos")
-    eventos = relationship("Evento", back_populates="processo", cascade="all, delete-orphan")
+    eventos = relationship(
+        "Evento", back_populates="processo", cascade="all, delete-orphan"
+    )
+
 
 class Evento(Base):
     __tablename__ = "eventos"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # E aplicamos aqui também
-    data_evento = Column(TimestampTZ, nullable=False, index=True) 
-    
+    data_evento = Column(TimestampTZ, nullable=False, index=True)
+
     descricao = Column(Text, nullable=True)
-    tipo_evento = Column(Enum(TipoEventoEnum), nullable=False, default=TipoEventoEnum.outro)
-    alerta_status = Column(Enum(AlertaStatusEnum), nullable=False, default=AlertaStatusEnum.pendente)
+    tipo_evento = Column(
+        Enum(TipoEventoEnum), nullable=False, default=TipoEventoEnum.outro
+    )
+    alerta_status = Column(
+        Enum(AlertaStatusEnum), nullable=False, default=AlertaStatusEnum.pendente
+    )
     processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
-    
-    processo = relationship("Processo", back_populates="eventos") 
+
+    processo = relationship("Processo", back_populates="eventos")

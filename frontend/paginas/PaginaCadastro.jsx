@@ -1,8 +1,8 @@
 import React, { useState, forwardRef } from 'react';
 import api from '../src/api';
-import { 
-  Box, Typography, Paper, TextField, Button, Grid, 
-  Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, FormHelperText
+import {
+  Box, Typography, Paper, TextField, Button, Grid,
+  Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, FormHelperText, Autocomplete
 } from '@mui/material';
 import { IMaskInput } from 'react-imask'; // Importa a máscara
 import { validarCPF } from '../src/util/cpfValidator'; // Importa nosso validador
@@ -70,6 +70,8 @@ const initialState = {
   status_processual: '',
   data_prisao: null,
   local_segregacao: '',
+  numero_da_guia: '',
+  tipo_guia: '',
 };
 
 export function PaginaCadastro() {
@@ -114,7 +116,7 @@ export function PaginaCadastro() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     // Validação de CPF em tempo real
     if (name === 'cpf') {
       const soNumeros = value.replace(/[^\d]+/g, '');
@@ -129,10 +131,10 @@ export function PaginaCadastro() {
         setCpfError(false); // Limpa o erro se não tiver 11 dígitos
       }
     }
-    
+
     // Atualiza o estado
-    setForm(prev => ({ 
-      ...prev, 
+    setForm(prev => ({
+      ...prev,
       [name]: (value === '' ? null : value) // Salva null se o campo for limpo
     }));
   };
@@ -143,7 +145,7 @@ export function PaginaCadastro() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Verifica a validação do CPF antes de enviar
     if (form.cpf && cpfError) {
       setSnack({ open: true, message: 'CPF inválido. Por favor, corrija.', severity: 'error' });
@@ -151,7 +153,7 @@ export function PaginaCadastro() {
     }
 
     setIsSaving(true);
-    
+
     // Prepara o payload, removendo máscaras
     const payload = {
       preso: {
@@ -167,6 +169,8 @@ export function PaginaCadastro() {
           status_processual: form.status_processual,
           data_prisao: form.data_prisao,
           local_segregacao: form.local_segregacao,
+          numero_da_guia: form.numero_da_guia,
+          tipo_guia: form.tipo_guia,
         }
       ]
     };
@@ -175,7 +179,7 @@ export function PaginaCadastro() {
       const response = await api.post('/api/cadastro-completo', payload);
       setSnack({ open: true, message: `Preso '${response.data.nome_completo}' cadastrado com sucesso!`, severity: 'success' });
       setForm(initialState); // Limpa o formulário
-      
+
       // *** MUDANÇA IMPORTANTE ***
       // Removemos o redirecionamento automático. O usuário verá o sucesso
       // e pode decidir cadastrar outro ou navegar pelo menu.
@@ -244,39 +248,39 @@ export function PaginaCadastro() {
           Usando 'display: grid' para o layout de 2 colunas que você gostou.
           Ele será 1 coluna (xs) em telas pequenas e 2 colunas (sm) em maiores.
       */}
-      <Paper 
-        component="form" 
-        onSubmit={handleSubmit} 
-        sx={{ 
-          p: 4, 
-          display: 'grid', 
-          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, 
-          gap: 3 
+      <Paper
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{
+          p: 4,
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+          gap: 3
         }}
       >
-        
+
         {/* Título da Seção 1 */}
         <Typography variant="h6" sx={{ gridColumn: '1 / -1', mb: -1 }}>
           1. Dados Pessoais
         </Typography>
 
-        <TextField 
+        <TextField
           name="nome_completo"
-          label="Nome Completo" 
+          label="Nome Completo"
           value={form.nome_completo || ''}
           onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
-          required 
+          variant="outlined"
+          fullWidth
+          required
           sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }} // Ocupa 2 colunas
         />
-        <TextField 
+        <TextField
           name="cpf"
-          label="CPF" 
+          label="CPF"
           value={form.cpf || ''}
           onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
+          variant="outlined"
+          fullWidth
           required
           error={cpfError} // Ativa o estado de erro
           helperText={cpfError ? 'CPF inválido' : ''} // Mensagem de ajuda
@@ -285,25 +289,25 @@ export function PaginaCadastro() {
           }}
           disabled={isConsultandoCpf}
         />
-        <TextField 
+        <TextField
           name="nome_da_mae"
-          label="Nome da Mãe" 
+          label="Nome da Mãe"
           value={form.nome_da_mae || ''}
           onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
+          variant="outlined"
+          fullWidth
         />
-        <TextField 
+        <TextField
           name="data_nascimento"
-          label="Data de Nascimento" 
+          label="Data de Nascimento"
           value={form.data_nascimento || ''}
           onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
+          variant="outlined"
+          fullWidth
           type="date"
           InputLabelProps={{ shrink: true }}
         />
-        
+
         {/* Espaçador */}
         <Box sx={{ gridColumn: '1 / -1', height: '16px' }} />
 
@@ -312,14 +316,14 @@ export function PaginaCadastro() {
           2. Dados do Processo e Prisão
         </Typography>
 
-        <TextField 
+        <TextField
           name="numero_processo"
-          label="Número do Processo (PJe)" 
+          label="Número do Processo (PJe)"
           value={form.numero_processo || ''}
           onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
-          required 
+          variant="outlined"
+          fullWidth
+          required
           sx={{ gridColumn: '1 / -1' }} // Ocupa 2 colunas
           InputProps={{
             inputComponent: ProcessoMascara, // Aplica a máscara
@@ -335,7 +339,7 @@ export function PaginaCadastro() {
             {isConsultandoProcesso ? 'Consultando integrações...' : 'Buscar dados no PJe/DataJud'}
           </Button>
         </Box>
-        
+
         {/* --- CAMPO SELECT (Tipo de Prisão) --- */}
         <FormControl fullWidth>
           <InputLabel id="tipo-prisao-label">Tipo da Prisão</InputLabel>
@@ -354,45 +358,69 @@ export function PaginaCadastro() {
         </FormControl>
 
         {/* --- CAMPO SELECT (Status Processual) --- */}
+        <Autocomplete
+          freeSolo
+          options={opcoesStatusProcessual}
+          value={form.status_processual || ''}
+          onChange={(event, newValue) => {
+            setForm(prev => ({ ...prev, status_processual: newValue }));
+          }}
+          onInputChange={(event, newInputValue) => {
+            setForm(prev => ({ ...prev, status_processual: newInputValue }));
+          }}
+          renderInput={(params) => (
+            <TextField {...params} label="Status Processual" variant="outlined" />
+          )}
+          fullWidth
+        />
+
+        <TextField
+          name="data_prisao"
+          label="Data da Prisão"
+          value={form.data_prisao || ''}
+          onChange={handleChange}
+          variant="outlined"
+          fullWidth
+          type="date"
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          name="local_segregacao"
+          label="Local de Segregação"
+          value={form.local_segregacao || ''}
+          onChange={handleChange}
+          variant="outlined"
+          fullWidth
+        />
+        <TextField
+          name="numero_da_guia"
+          label="Número da Guia (Opcional)"
+          value={form.numero_da_guia || ''}
+          onChange={handleChange}
+          variant="outlined"
+          fullWidth
+        />
+
         <FormControl fullWidth>
-          <InputLabel id="status-processual-label">Status Processual</InputLabel>
+          <InputLabel id="tipo-guia-label">Tipo de Guia (Opcional)</InputLabel>
           <Select
-            labelId="status-processual-label"
-            id="status_processual"
-            name="status_processual"
-            value={form.status_processual || ''}
-            label="Status Processual"
+            labelId="tipo-guia-label"
+            id="tipo_guia"
+            name="tipo_guia"
+            value={form.tipo_guia || ''}
+            label="Tipo de Guia (Opcional)"
             onChange={handleChange}
           >
-            {opcoesStatusProcessual.map((opcao) => (
-              <MenuItem key={opcao} value={opcao}>{opcao}</MenuItem>
-            ))}
+            <MenuItem value=""><em>Nenhuma</em></MenuItem>
+            <MenuItem value="Provisória">Provisória</MenuItem>
+            <MenuItem value="Definitiva">Definitiva</MenuItem>
           </Select>
         </FormControl>
 
-        <TextField 
-          name="data_prisao"
-          label="Data da Prisão" 
-          value={form.data_prisao || ''}
-          onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
-          type="date" 
-          InputLabelProps={{ shrink: true }}
-        />
-        <TextField 
-          name="local_segregacao"
-          label="Local de Segregação" 
-          value={form.local_segregacao || ''}
-          onChange={handleChange}
-          variant="outlined" 
-          fullWidth 
-        />
-
         <Box sx={{ gridColumn: '1 / -1', mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-          <Button 
-            type="submit" 
-            variant="contained" 
+          <Button
+            type="submit"
+            variant="contained"
             size="large"
             disabled={isSaving}
           >
@@ -400,7 +428,7 @@ export function PaginaCadastro() {
           </Button>
         </Box>
       </Paper>
-      
+
       {/* Componente de Alerta/Notificação */}
       <Snackbar
         open={snack.open}
