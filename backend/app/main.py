@@ -148,8 +148,11 @@ async def csrf_protection_middleware(request: Request, call_next):
         and request.url.path.startswith("/api")
         and request.url.path not in csrf_exempt_paths
     ):
+        auth_header = request.headers.get("Authorization", "")
+        has_bearer_auth = auth_header.startswith("Bearer ")
         session_cookie = request.cookies.get(AUTH_COOKIE_NAME)
-        if session_cookie:
+        # CSRF é obrigatório apenas para autenticação baseada em cookie.
+        if session_cookie and not has_bearer_auth:
             csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
             csrf_header = request.headers.get("X-CSRF-Token")
             if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
