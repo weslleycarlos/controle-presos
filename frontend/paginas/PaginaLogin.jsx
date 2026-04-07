@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import api, { setAuthToken } from '../src/api';
 import { useAuth } from '../src/AuthContext';
 
-import { 
-  Box, Button, TextField, Typography, Container, Link, 
+import {
+  Box, Button, TextField, Typography, Container, Link,
   InputAdornment, Alert // Alert para mensagens de erro
 } from '@mui/material';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
@@ -19,7 +19,7 @@ export function PaginaLogin() {
 
   const fazerLogin = async (e) => {
     e.preventDefault();
-    setErro(''); 
+    setErro('');
 
     const params = new URLSearchParams();
     params.append('username', cpf);
@@ -34,10 +34,10 @@ export function PaginaLogin() {
       if (accessToken) {
         setAuthToken(accessToken);
       }
-      
+
       await login();
       navigate('/'); // Navega para o Dashboard
-      
+
     } catch (error) {
       if (error.response && error.response.data && error.response.data.detail) {
         setErro(error.response.data.detail);
@@ -49,8 +49,8 @@ export function PaginaLogin() {
   };
 
   return (
-    <Container 
-      component="main" 
+    <Container
+      component="main"
       maxWidth="xs" // Limita a largura para "extra-small" (ótimo para forms)
       sx={{ // 'sx' é como o atributo "style", mas com superpoderes
         display: 'flex',
@@ -58,30 +58,30 @@ export function PaginaLogin() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        fontFamily: 'Inter, sans-serif'
+        backgroundColor: 'background.default'
       }}
     >
       <Box
         sx={{
-          backgroundColor: '#ffffff',
+          backgroundColor: 'background.paper',
           padding: '40px 32px', // 40px em cima/baixo, 32px nos lados
           borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+          boxShadow: 2,
           width: '100%',
         }}
       >
         {/* Cabeçalho */}
         <Box sx={{ textAlign: 'center', marginBottom: '32px' }}>
-          <Typography 
-            component="h1" 
+          <Typography
+            component="h1"
             variant="h5" // h5 é um estilo de título pré-definido
-            sx={{ fontWeight: '700', color: '#0A2463' }}
+            sx={{ fontWeight: '700', color: 'primary.main' }}
           >
             Controle de Presos
           </Typography>
-          <Typography 
-            component="p" 
-            sx={{ color: '#6c757d', marginTop: '8px' }}
+          <Typography
+            component="p"
+            sx={{ color: 'text.secondary', marginTop: '8px' }}
           >
             Acesso ao Sistema
           </Typography>
@@ -89,7 +89,7 @@ export function PaginaLogin() {
 
         {/* --- Formulário Atualizado --- */}
         <Box component="form" onSubmit={fazerLogin} noValidate>
-          
+
           {/* Exibe a mensagem de erro, se houver */}
           {erro && (
             <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
@@ -137,24 +137,19 @@ export function PaginaLogin() {
             type="submit"
             fullWidth
             variant="contained"
-            sx={{ 
+            sx={{
               mt: 3, // mt = margin-top (3 * 8px = 24px)
               mb: 2, // mb = margin-bottom
               padding: '10px',
               fontWeight: '600',
-              backgroundColor: '#0A2463', // Nosso azul
-              // Estilo :hover
-              '&:hover': {
-                backgroundColor: '#0D47A1', // Um azul um pouco mais claro
-              }
             }}
           >
             Entrar
           </Button>
-          
-          <Link 
-            href="#" 
-            variant="body2" 
+
+          <Link
+            href="#"
+            variant="body2"
             sx={{ textAlign: 'center', display: 'block' }}
           >
             Esqueceu sua senha?

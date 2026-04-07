@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { useAuth } from './AuthContext';
-
-import { PaginaLogin } from '../paginas/PaginaLogin';
-import { PaginaDashboard } from '../paginas/PaginaDashboard';
 import { Layout } from './componentes/Layout';
-import { PaginaCadastro } from '../paginas/PaginaCadastro'; 
-import { PaginaDetalhes } from '../paginas/PaginaDetalhes';
-import { PaginaAlertas } from '../paginas/PaginaAlertas';
-import { PaginaAjuda } from '../paginas/PaginaAjuda';
-import { PaginaPerfil } from '../paginas/PaginaPerfil';
-import { PaginaAdminUsuarios } from '../paginas/PaginaAdminUsuarios';
+
+const PaginaLogin = React.lazy(() => import('../paginas/PaginaLogin').then(m => ({ default: m.PaginaLogin })));
+const PaginaDashboard = React.lazy(() => import('../paginas/PaginaDashboard').then(m => ({ default: m.PaginaDashboard })));
+const PaginaCadastro = React.lazy(() => import('../paginas/PaginaCadastro').then(m => ({ default: m.PaginaCadastro })));
+const PaginaDetalhes = React.lazy(() => import('../paginas/PaginaDetalhes').then(m => ({ default: m.PaginaDetalhes })));
+const PaginaAlertas = React.lazy(() => import('../paginas/PaginaAlertas').then(m => ({ default: m.PaginaAlertas })));
+const PaginaAjuda = React.lazy(() => import('../paginas/PaginaAjuda').then(m => ({ default: m.PaginaAjuda })));
+const PaginaPerfil = React.lazy(() => import('../paginas/PaginaPerfil').then(m => ({ default: m.PaginaPerfil })));
+const PaginaAdminUsuarios = React.lazy(() => import('../paginas/PaginaAdminUsuarios').then(m => ({ default: m.PaginaAdminUsuarios })));
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
 
@@ -23,12 +23,12 @@ const RotaProtegida = () => {
 
 const RotaAdmin = () => {
   const { usuario } = useAuth(); // Lê o usuário (com 'role') do Contexto
-  
+
   if (!usuario) {
     // Se o usuário ainda não carregou, não renderiza nada (ou um loading)
-    return null; 
+    return null;
   }
-  
+
   // Se é admin, permite. Se não, joga para o Dashboard.
   return usuario.role === 'admin' ? <Outlet /> : <Navigate to="/" replace />;
 };
@@ -49,7 +49,7 @@ const router = createBrowserRouter([
       { path: 'alertas', element: <PaginaAlertas /> },
       { path: 'ajuda', element: <PaginaAjuda /> },
       { path: 'perfil', element: <PaginaPerfil /> },
-      
+
       // --- NOVA ROTA DE ADMIN (aninhada) ---
       {
         path: 'admin',
@@ -71,7 +71,9 @@ function App() {
   }
 
   return (
-    <RouterProvider router={router} />
+    <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
+      <RouterProvider router={router} />
+    </Suspense>
   );
 }
 
