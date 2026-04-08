@@ -21,6 +21,7 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu'; // Ícone Hamburguer
+import AssessmentIcon from '@mui/icons-material/Assessment';
 
 
 const drawerWidth = 240; // Largura do nosso menu lateral
@@ -118,6 +119,12 @@ export function Layout() {
               <NotificationsIcon />
             </ListItemIcon>
             <ListItemText primary="Alertas de Prazo" />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton component={RouterLink} to="/relatorios">
+            <ListItemIcon><AssessmentIcon /></ListItemIcon>
+            <ListItemText primary="Relatórios" />
           </ListItemButton>
         </ListItem>
         {usuario && usuario.role === 'admin' && (
