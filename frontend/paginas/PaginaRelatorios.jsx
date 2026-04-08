@@ -112,7 +112,6 @@ export function PaginaRelatorios() {
 
           autoTable(doc, {
             startY,
-            head: [['Campo', 'Valor']],
             body: [
               ['Status Processual', processo.status_processual || ''],
               ['Tipo de Prisão', processo.tipo_prisao || ''],
@@ -122,7 +121,6 @@ export function PaginaRelatorios() {
               ['Tipo da Guia', processo.tipo_guia || ''],
             ],
             theme: 'striped',
-            headStyles: { fillColor: [41, 128, 185] },
             margin: { left: 14 },
             styles: { fontSize: 9 },
           });

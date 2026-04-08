@@ -379,10 +379,8 @@ export function PaginaDetalhes() {
 
       autoTable(doc, {
         startY: startY,
-        head: [['Campo', 'Valor']],
         body: processoDados,
         theme: 'striped',
-        headStyles: { fillColor: [41, 128, 185] },
         margin: { left: 14 }
       });
 
