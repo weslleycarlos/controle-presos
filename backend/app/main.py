@@ -354,12 +354,29 @@ def search_presos_endpoint( # Mudei o nome da função para evitar conflito
     data_prisao: Optional[date] = None
 ):
     presos = crud.search_presos(
-        db=db, 
-        nome=nome, 
-        status_processual=status_processual, 
+        db=db,
+        nome=nome,
+        status_processual=status_processual,
         data_prisao=data_prisao
     )
     return presos
+
+@app.get("/api/relatorios/completo", response_model=List[schemas.PresoDetalhe], tags=["Relatórios"])
+def get_relatorio_completo(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    nome: Optional[str] = None,
+    status_processual: Optional[str] = None,
+    data_prisao: Optional[date] = None,
+):
+    return crud.search_presos(
+        db=db,
+        nome=nome,
+        status_processual=status_processual,
+        data_prisao=data_prisao,
+        skip=0,
+        limit=10000,
+    )
 
 @app.get("/api/presos/{preso_id}", response_model=schemas.PresoDetalhe, tags=["Presos"])
 def read_preso_details(

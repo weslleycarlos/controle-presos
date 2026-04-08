@@ -12,6 +12,7 @@ const PaginaAlertas = React.lazy(() => import('../paginas/PaginaAlertas').then(m
 const PaginaAjuda = React.lazy(() => import('../paginas/PaginaAjuda').then(m => ({ default: m.PaginaAjuda })));
 const PaginaPerfil = React.lazy(() => import('../paginas/PaginaPerfil').then(m => ({ default: m.PaginaPerfil })));
 const PaginaAdminUsuarios = React.lazy(() => import('../paginas/PaginaAdminUsuarios').then(m => ({ default: m.PaginaAdminUsuarios })));
+const PaginaRelatorios = React.lazy(() => import('../paginas/PaginaRelatorios').then(m => ({ default: m.PaginaRelatorios })));
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
 
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
       { path: 'alertas', element: <PaginaAlertas /> },
       { path: 'ajuda', element: <PaginaAjuda /> },
       { path: 'perfil', element: <PaginaPerfil /> },
+      { path: 'relatorios', element: <PaginaRelatorios /> },
 
       // --- NOVA ROTA DE ADMIN (aninhada) ---
       {
