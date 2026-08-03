@@ -274,10 +274,38 @@ def update_user_profile(db: Session, db_user: models.User, user_in: schemas.User
 
 
 def update_user_password(db: Session, db_user: models.User, nova_senha: str):
-    """Atualiza o hash da senha do usuário."""
+    """
+    Atualiza o hash da senha do usuário.
+
+    Incrementa o token_version para que qualquer sessão aberta com a senha
+    antiga deixe de valer imediatamente.
+    """
     db_user.hashed_password = get_password_hash(nova_senha)
+    db_user.token_version = (db_user.token_version or 1) + 1
     db.commit()
+    db.refresh(db_user)
     return db_user
+
+
+def get_status_processuais(db: Session) -> list[str]:
+    """
+    Retorna os status processuais realmente em uso, em ordem alfabética.
+
+    O campo é de texto livre no cadastro, então a lista de filtros precisa vir
+    do banco em vez de uma lista fixa no frontend.
+    """
+    linhas = (
+        db.query(models.Processo.status_processual)
+        .filter(
+            models.Processo.status_processual.is_not(None),
+            func.trim(models.Processo.status_processual) != "",
+        )
+        .distinct()
+        .all()
+    )
+
+    valores = {(linha[0] or "").strip() for linha in linhas}
+    return sorted(valor for valor in valores if valor)
 
 
 def get_users(db: Session, skip: int = 0, limit: int = 100):

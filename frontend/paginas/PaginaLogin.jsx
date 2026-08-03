@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { setAuthToken } from '../src/api';
 import { useAuth } from '../src/AuthContext';
+import { extractErrorMessage } from '../src/util/apiError';
 
 import {
   Box, Button, TextField, Typography, Container, Link,
@@ -39,11 +40,7 @@ export function PaginaLogin() {
       navigate('/'); // Navega para o Dashboard
 
     } catch (error) {
-      if (error.response && error.response.data && error.response.data.detail) {
-        setErro(error.response.data.detail);
-      } else {
-        setErro('Erro ao tentar conectar ao servidor.');
-      }
+      setErro(extractErrorMessage(error, 'Erro ao tentar conectar ao servidor.'));
       console.error('Erro no login:', error);
     }
   };

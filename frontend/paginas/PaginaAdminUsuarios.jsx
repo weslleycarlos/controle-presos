@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../src/api';
+import { extractErrorMessage } from '../src/util/apiError';
 import {
   Box, Typography, Paper, Grid, TextField, Button, Skeleton,
   FormControl, InputLabel, Select, MenuItem, Snackbar, Alert,
@@ -109,7 +110,7 @@ export function PaginaAdminUsuarios() {
       fetchUsuarios(); // Recarrega a lista
     } catch (error) {
       console.error('Erro ao criar usuário:', error);
-      setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao criar usuário.', severity: 'error' });
+      setSnack({ open: true, message: extractErrorMessage(error, 'Erro ao criar usuário.'), severity: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -152,7 +153,7 @@ export function PaginaAdminUsuarios() {
       fetchUsuarios(); // Recarrega a lista
     } catch (error) {
       console.error('Erro ao atualizar usuário:', error);
-      setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao atualizar.', severity: 'error' });
+      setSnack({ open: true, message: extractErrorMessage(error, 'Erro ao atualizar.'), severity: 'error' });
     } finally {
       setIsUpdating(false);
     }
@@ -181,7 +182,7 @@ export function PaginaAdminUsuarios() {
       handleCloseModalReset();
     } catch (error) {
       console.error('Erro ao resetar senha:', error);
-      setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao resetar senha.', severity: 'error' });
+      setSnack({ open: true, message: extractErrorMessage(error, 'Erro ao resetar senha.'), severity: 'error' });
     } finally {
       setIsReseting(false);
     }
@@ -281,7 +282,7 @@ export function PaginaAdminUsuarios() {
                 <TextField name="email" label="Email" type="email" value={formCreate.email} onChange={handleChangeCreate} variant="outlined" fullWidth required />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField name="password" label="Senha Provisória" type="password" value={formCreate.password} onChange={handleChangeCreate} variant="outlined" fullWidth required />
+                <TextField name="password" label="Senha Provisória" type="password" value={formCreate.password} onChange={handleChangeCreate} variant="outlined" fullWidth required inputProps={{ minLength: 8 }} helperText="Mínimo de 8 caracteres" />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth variant="outlined">

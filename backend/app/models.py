@@ -40,6 +40,8 @@ class User(Base):
     role = Column(String(50), nullable=True, default="user")
     is_active = Column(Boolean, default=True)
     preferencia_tema = Column(String(10), default="light")
+    # Incrementado a cada troca/reset de senha: invalida tokens já emitidos.
+    token_version = Column(Integer, nullable=False, default=1, server_default="1")
     notification_preference = relationship(
         "UserNotificationPreference",
         back_populates="user",
@@ -128,3 +130,33 @@ class Evento(Base):
     processo_id = Column(Integer, ForeignKey("processos.id"), nullable=False)
 
     processo = relationship("Processo", back_populates="eventos")
+
+
+class LogAuditoria(Base):
+    """
+    Trilha de auditoria: quem fez o quê, quando e de onde.
+
+    Guarda o CPF e o nome do autor em texto além do FK, para que o registro
+    continue legível mesmo se o usuário for removido depois.
+    """
+
+    __tablename__ = "logs_auditoria"
+
+    id = Column(Integer, primary_key=True, index=True)
+    data_hora = Column(TimestampTZ, nullable=False, server_default=func.now(), index=True)
+
+    usuario_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    usuario_cpf = Column(String(11), nullable=True, index=True)
+    usuario_nome = Column(String(255), nullable=True)
+
+    acao = Column(String(60), nullable=False, index=True)
+    entidade = Column(String(60), nullable=True, index=True)
+    entidade_id = Column(String(60), nullable=True)
+
+    sucesso = Column(Boolean, nullable=False, default=True)
+    detalhe = Column(Text, nullable=True)
+
+    ip = Column(String(64), nullable=True)
+    user_agent = Column(String(400), nullable=True)

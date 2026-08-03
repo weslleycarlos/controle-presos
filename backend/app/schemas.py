@@ -221,3 +221,30 @@ class PessoaConsultaCPFResponse(BaseModel):
     sucesso: bool
     mensagem: Optional[str] = None
     dados: Optional[dict[str, Any]] = None
+
+
+# --- Auditoria ---
+
+
+class LogAuditoria(BaseModel):
+    id: int
+    data_hora: datetime
+    usuario_id: Optional[int] = None
+    usuario_cpf: Optional[str] = None
+    usuario_nome: Optional[str] = None
+    acao: str
+    entidade: Optional[str] = None
+    entidade_id: Optional[str] = None
+    sucesso: bool
+    detalhe: Optional[str] = None
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcaoAuditoria(BaseModel):
+    """Ação registrável, com rótulo legível para a interface."""
+
+    valor: str
+    rotulo: str

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../src/api';
+import { extractErrorMessage } from '../src/util/apiError';
 import {
   Box, Typography, Paper, Grid, TextField, Button,
   CircularProgress, Snackbar, Alert, FormControlLabel, Switch
@@ -51,7 +52,7 @@ export function PaginaPerfil() {
       await api.put('/api/users/me/notificacoes', notificationPrefs);
       setSnack({ open: true, message: 'Perfil atualizado com sucesso!', severity: 'success' });
     } catch (error) {
-      setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao atualizar perfil.', severity: 'error' });
+      setSnack({ open: true, message: extractErrorMessage(error, 'Erro ao atualizar perfil.'), severity: 'error' });
     } finally {
       setIsSavingUser(false);
     }
@@ -77,7 +78,7 @@ export function PaginaPerfil() {
       setSnack({ open: true, message: 'Senha alterada com sucesso!', severity: 'success' });
       setPassForm({ senha_antiga: '', nova_senha: '', confirmar_nova_senha: '' }); // Limpa o form
     } catch (error) {
-      setSnack({ open: true, message: error.response?.data?.detail || 'Erro ao alterar senha.', severity: 'error' });
+      setSnack({ open: true, message: extractErrorMessage(error, 'Erro ao alterar senha.'), severity: 'error' });
     } finally {
       setIsSavingPass(false);
     }

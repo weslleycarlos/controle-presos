@@ -11,15 +11,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Link as RouterLink } from 'react-router-dom'; // Importa o Link do Roteador
 
 
-const opcoesStatusProcessual = [
-  'Aguardando Julgamento',
-  'Cumprindo Pena',
-  'Aguardando Transferência',
-  'Inquérito',
-  'Liberado',
-  'Outro',
-];
-
 // Função de Cor do Status (para o "ponto" colorido)
 const getStatusColor = (status) => {
   if (!status) return '#6c757d'; // Cinza (N/A)
@@ -41,25 +32,43 @@ export function PaginaDashboard() {
     status_processual: '',
     data_prisao: '',
   });
+
+  // O status processual é digitado livremente no cadastro, então as opções do
+  // filtro vêm do que existe no banco — não de uma lista fixa no código.
+  const [opcoesStatusProcessual, setOpcoesStatusProcessual] = useState([]);
+
+  useEffect(() => {
+    const buscarStatus = async () => {
+      try {
+        const { data } = await api.get('/api/presos/status-processuais');
+        setOpcoesStatusProcessual(data);
+      } catch (error) {
+        console.error('Erro ao buscar status processuais:', error);
+      }
+    };
+    buscarStatus();
+  }, []);
   // --- FUNÇÃO PARA BUSCAR DADOS ---
-  const fetchPresos = useCallback(async () => {
+  // Recebe os filtros por parâmetro para não precisar ser recriada a cada
+  // tecla digitada: a busca só acontece quando o usuário manda buscar.
+  const fetchPresos = useCallback(async (filtrosBusca) => {
     setIsLoading(true);
     try {
       // Constrói os parâmetros de consulta dinamicamente
       const params = new URLSearchParams();
-      if (filtros.nome) {
-        params.append('nome', filtros.nome);
+      if (filtrosBusca.nome) {
+        params.append('nome', filtrosBusca.nome);
       }
-      if (filtros.status_processual) {
-        params.append('status_processual', filtros.status_processual);
+      if (filtrosBusca.status_processual) {
+        params.append('status_processual', filtrosBusca.status_processual);
       }
-      if (filtros.data_prisao) {
-        params.append('data_prisao', filtros.data_prisao);
+      if (filtrosBusca.data_prisao) {
+        params.append('data_prisao', filtrosBusca.data_prisao);
       }
 
       // Converte os parâmetros para uma string (ex: "?nome=Joao&status=Liberado")
       const queryString = params.toString();
-      
+
       const response = await api.get(`/api/presos/search/?${queryString}`);
       setPresos(response.data);
       setPage(0); // Reseta a paginação
@@ -68,18 +77,18 @@ export function PaginaDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [filtros]); // Re-cria a função se os 'filtros' mudarem
+  }, []);
 
   // --- useEffect ---
-  // Roda a função fetchPresos() assim que o componente é montado
+  // Busca inicial, sem filtros, assim que o componente é montado
   useEffect(() => {
-    fetchPresos(); // Busca inicial (todos os presos)
-  }, []); // O array vazio [] significa "rodar apenas uma vez"
+    fetchPresos({ nome: '', status_processual: '', data_prisao: '' });
+  }, [fetchPresos]);
 
   // Handler para o botão "Buscar"
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchPresos();
+    fetchPresos(filtros);
   };
   
   // Handler para atualizar os filtros

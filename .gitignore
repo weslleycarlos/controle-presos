@@ -1,3 +1,7 @@
+# ATENÇÃO: o Git não aceita comentário no final da linha de um padrão.
+# "backend/local.db  # comentário" vira um padrão literal e não ignora nada.
+# Comentários devem ficar sempre em linha separada.
+
 # --- Backend (Python) ---
 backend/venv/
 backend/.venv/
@@ -5,21 +9,30 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/*.pyc
 backend/**/*.pyc
-# Muito importante: Arquivo de senhas
+
+# Muito importante: arquivo de senhas
 backend/.env
 backend/.env.local
 backend/.env.production
-backend/local.db      # Banco de dados SQLite local
-backend/local.db-journal # Arquivo temporário do SQLite
+
+# Banco de dados SQLite local e temporários do SQLite
+backend/local.db
+backend/local.db-journal
 backend/*.db
 backend/*.db-journal
 
 # --- Frontend (Node/React) ---
 frontend/node_modules/
-frontend/.env*        # Ignora .env, .env.local, .env.production etc.
-frontend/dist/        # Pasta de build do frontend (gerada por 'npm run build')
-frontend/.DS_Store    # Arquivo do macOS
+
+# Ignora .env, .env.local, .env.production etc., mas mantém o exemplo
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Pasta de build do frontend (gerada por 'npm run build')
+frontend/dist/
 frontend/build/
+frontend/.DS_Store
 
 # --- Arquivos de IDE/Editor ---
 .vscode/

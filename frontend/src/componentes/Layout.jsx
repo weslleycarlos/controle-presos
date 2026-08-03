@@ -22,6 +22,7 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu'; // Ícone Hamburguer
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import HistoryIcon from '@mui/icons-material/History';
 
 
 const drawerWidth = 240; // Largura do nosso menu lateral
@@ -128,12 +129,20 @@ export function Layout() {
           </ListItemButton>
         </ListItem>
         {usuario && usuario.role === 'admin' && (
-          <ListItem disablePadding>
-            <ListItemButton component={RouterLink} to="/admin/usuarios">
-              <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
-              <ListItemText primary="Gerenciar Usuários" />
-            </ListItemButton>
-          </ListItem>
+          <>
+            <ListItem disablePadding>
+              <ListItemButton component={RouterLink} to="/admin/usuarios">
+                <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                <ListItemText primary="Gerenciar Usuários" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem disablePadding>
+              <ListItemButton component={RouterLink} to="/admin/logs">
+                <ListItemIcon><HistoryIcon /></ListItemIcon>
+                <ListItemText primary="Auditoria" />
+              </ListItemButton>
+            </ListItem>
+          </>
         )}
       </List>
       <Divider />

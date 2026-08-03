@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import { IMaskInput } from 'react-imask'; // Importa a máscara
 import { validarCPF } from '../src/util/cpfValidator'; // Importa nosso validador
+import { extractErrorMessage } from '../src/util/apiError';
 
 // --- Componentes Customizados para Máscara ---
 // Precisamos "ensinar" o MUI a usar o IMaskInput
@@ -187,10 +188,7 @@ export function PaginaCadastro() {
 
     } catch (error) {
       console.error('Erro ao cadastrar:', error);
-      let errorMsg = 'Erro ao salvar. Verifique os campos.';
-      if (error.response?.data?.detail) {
-        errorMsg = error.response.data.detail;
-      }
+      const errorMsg = extractErrorMessage(error, 'Erro ao salvar. Verifique os campos.');
       setSnack({ open: true, message: errorMsg, severity: 'error' });
     } finally {
       setIsSaving(false);
@@ -230,7 +228,7 @@ export function PaginaCadastro() {
     } catch (error) {
       setSnack({
         open: true,
-        message: error.response?.data?.detail || 'Falha ao consultar integração externa.',
+        message: extractErrorMessage(error, 'Falha ao consultar integração externa.'),
         severity: 'error'
       });
     } finally {
