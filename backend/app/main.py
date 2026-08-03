@@ -13,21 +13,44 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import timedelta, datetime, timezone
-from .security import create_access_token, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
+from .security import (
+    create_access_token,
+    verify_password,
+    validar_forca_senha,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    decode_access_token_payload,
+    precisa_renovar_token,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
 from .integracoes import consultar_processo_externo, consultar_cpf_externo
 from .notifications import send_email_alerts
+from . import auditoria
+from .migrations import run_lightweight_migrations
 
 # Esta linha é crucial! Ela cria as tabelas no seu banco de dados
 # com base no que definimos em models.py
 models.Base.metadata.create_all(bind=engine)
+run_lightweight_migrations(engine)
 
-app = FastAPI(title="Sistema de Controle de Presos")
 logger = logging.getLogger(__name__)
 AUTH_COOKIE_NAME = "access_token"
 CSRF_COOKIE_NAME = "csrf_token"
+REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 IS_PRODUCTION = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() in {"production", "prod"}
 COOKIE_SAMESITE = "none" if IS_PRODUCTION else "lax"
+
+# Bloqueio temporário por força bruta no login.
+LOGIN_MAX_TENTATIVAS = 5
+LOGIN_JANELA_MINUTOS = 15
+
+# A documentação interativa expõe o mapa completo da API. Em produção ela fica
+# desligada; em desenvolvimento continua disponível normalmente.
+app = FastAPI(
+    title="Sistema de Controle de Presos",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 
 
 def _validar_cron_secret(request: Request):
@@ -46,9 +69,8 @@ def _validar_cron_secret(request: Request):
     if not token:
         token = request.headers.get("X-Cron-Secret", "").strip()
 
-    if not token:
-        token = request.query_params.get("secret", "").strip()
-
+    # O segredo não é aceito por query string: URLs acabam em logs de acesso,
+    # históricos de proxy e no próprio arquivo de configuração do cron.
     if not token or not secrets.compare_digest(token, cron_secret):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autorizado para execução do job.")
 
@@ -107,14 +129,20 @@ def _bootstrap_admin_if_configured():
         db.close()
 
 # --- INÍCIO DA CONFIGURAÇÃO DO CORS ---
-# Lista de "origens" (endereços) que podem acessar este backend
+# Origens de produção sempre permitidas.
 origins = [
-    "https://controle-presos-front-production.up.railway.app", # Endereço do frontend em produção (Railway)
-    "https://controle-presos.vercel.app", # Endereço do frontend em produção (Vercel)
-    "http://localhost:5173", # O endereço do frontend React (Vite)
-    "http://localhost",
-    "http://127.0.0.1:5173", # Outra forma de acessar o mesmo endereço
+    "https://controle-presos-front-production.up.railway.app", # Frontend em produção (Railway)
+    "https://controle-presos.vercel.app", # Frontend em produção (Vercel)
 ]
+
+# Endereços de desenvolvimento só entram fora de produção: em produção eles
+# ampliariam a superfície de ataque sem nenhum ganho.
+if not IS_PRODUCTION:
+    origins.extend([
+        "http://localhost:5173",
+        "http://localhost",
+        "http://127.0.0.1:5173",
+    ])
 
 origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
 if origins_env:
@@ -125,10 +153,13 @@ if origins_env:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # Quais origens são permitidas
-    allow_credentials=True,    # Permite cookies/tokens (autenticação)
-    allow_methods=["*"],       # Permite todos os métodos (GET, POST, etc)
-    allow_headers=["*"],       # Permite todos os cabeçalhos (como 'Authorization')
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    # Sem isto o navegador esconde estes cabeçalhos do JavaScript, quebrando a
+    # paginação e a renovação silenciosa de sessão em requisições cross-origin.
+    expose_headers=["X-Total-Count", "X-Week-Count", REFRESHED_TOKEN_HEADER],
 )
 # --- FIM DA CONFIGURAÇÃO DO CORS ---
 
@@ -136,13 +167,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
 
 
 @app.get("/", include_in_schema=False)
-def root_redirect_to_docs():
+def root():
+    """
+    Em produção não anunciamos a documentação; a raiz só confirma que a API
+    está de pé. Em desenvolvimento, redireciona para o /docs por conveniência.
+    """
+    if IS_PRODUCTION:
+        return {"status": "ok"}
     return RedirectResponse(url="/docs")
 
 
 @app.middleware("http")
 async def csrf_protection_middleware(request: Request, call_next):
-    csrf_exempt_paths = {"/api/token", "/api/logout", "/api/csrf-token"}
+    # O endpoint de job autentica por segredo próprio em cabeçalho, que um
+    # navegador nunca anexa sozinho — logo, não há vetor de CSRF a proteger.
+    csrf_exempt_paths = {
+        "/api/token",
+        "/api/logout",
+        "/api/csrf-token",
+        "/api/jobs/check-alertas",
+    }
     if (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and request.url.path.startswith("/api")
@@ -166,13 +210,30 @@ async def csrf_protection_middleware(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     return response
 
+def _definir_cookie_sessao(response: Response, nome: str, valor: str, httponly: bool):
+    """Grava um cookie de sessão com os atributos de segurança do ambiente."""
+    response.set_cookie(
+        key=nome,
+        value=valor,
+        httponly=httponly,
+        secure=IS_PRODUCTION,
+        samesite=COOKIE_SAMESITE,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+
+
 async def get_current_user(
     request: Request,
+    response: Response,
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ):
     """
     Dependência para obter o usuário logado a partir do token.
+
+    Além de validar, mantém a sessão viva enquanto houver atividade: quando o
+    token se aproxima do fim da janela de inatividade, um novo é emitido.
     """
     access_token = token
     if not access_token:
@@ -188,14 +249,15 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    cpf = decode_access_token(access_token)
-    if cpf is None:
+    payload = decode_access_token_payload(access_token)
+    if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido",
+            detail="Sessão expirada ou inválida. Faça login novamente.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = crud.get_user_by_cpf(db, cpf=cpf)
+
+    user = crud.get_user_by_cpf(db, cpf=payload.cpf)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -203,17 +265,48 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
-         raise HTTPException(status_code=400, detail="Usuário inativo")
+        raise HTTPException(status_code=403, detail="Usuário inativo")
+
+    # Token emitido antes da última troca de senha não vale mais.
+    if payload.token_version != (user.token_version or 1):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão encerrada porque a senha foi alterada. Faça login novamente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if precisa_renovar_token(payload):
+        novo_token = create_access_token(
+            data={"sub": user.cpf, "role": user.role, "tv": user.token_version or 1},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            sessao_iniciada_em=payload.sessao_iniciada_em,
+        )
+        _definir_cookie_sessao(response, AUTH_COOKIE_NAME, novo_token, httponly=True)
+        # Clientes que usam Bearer leem o token renovado por este cabeçalho.
+        response.headers[REFRESHED_TOKEN_HEADER] = novo_token
+
     return user
 
 # --- 1. ADICIONE ESTA NOVA FUNÇÃO (dependência de admin) ---
 # (Coloque-a logo após a função 'get_current_user')
-def get_current_admin_user(current_user: models.User = Depends(get_current_user)):
+def get_current_admin_user(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Verifica se o usuário logado é um admin.
     Se não for, levanta um erro 403 (Forbidden).
     """
     if current_user.role != "admin":
+        auditoria.registrar(
+            db,
+            auditoria.ACESSO_NEGADO,
+            request=request,
+            usuario=current_user,
+            sucesso=False,
+            detalhe=f"Tentativa de acesso a recurso restrito: {request.method} {request.url.path}",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso restrito a administradores"
@@ -222,22 +315,39 @@ def get_current_admin_user(current_user: models.User = Depends(get_current_user)
 
 @app.post("/api/users/", response_model=schemas.User, tags=["Autenticação"])
 def create_new_user(
-    user: schemas.UserCreate, 
+    user: schemas.UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(get_current_admin_user) # <-- NOVA LINHA
 ):
     """
     Cria um novo usuário. (Protegido - Apenas Admins)
     """
+    erro_senha = validar_forca_senha(user.password)
+    if erro_senha:
+        raise HTTPException(status_code=400, detail=erro_senha)
+
     db_user = crud.get_user_by_cpf(db, cpf=user.cpf)
     if db_user:
         raise HTTPException(status_code=400, detail="CPF já cadastrado")
-    return crud.create_user(db=db, user=user)
+
+    novo_usuario = crud.create_user(db=db, user=user)
+    auditoria.registrar(
+        db,
+        auditoria.USUARIO_CRIADO,
+        request=request,
+        usuario=admin_user,
+        entidade="usuario",
+        entidade_id=novo_usuario.id,
+        detalhe=f"Criou o usuário '{novo_usuario.nome_completo}' com papel '{novo_usuario.role}'.",
+    )
+    return novo_usuario
 
 @app.post("/api/token", response_model=schemas.Token, tags=["Autenticação"])
 def login_for_access_token(
+    request: Request,
     response: Response,
-    form_data: OAuth2PasswordRequestForm = Depends(), 
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
     """
@@ -245,48 +355,99 @@ def login_for_access_token(
     Retorna um Token JWT.
     """
     # O form_data usa 'username', vamos usá-lo para o nosso 'cpf'
-    user = crud.get_user_by_cpf(db, cpf=form_data.username)
-    
+    cpf_informado = (form_data.username or "").strip()
+    ip_origem = auditoria.extrair_ip(request)
+
+    # Bloqueio temporário após tentativas malsucedidas seguidas.
+    falhas_recentes = auditoria.contar_falhas_login_recentes(
+        db,
+        cpf=cpf_informado,
+        ip=ip_origem,
+        janela_minutos=LOGIN_JANELA_MINUTOS,
+    )
+    if falhas_recentes >= LOGIN_MAX_TENTATIVAS:
+        auditoria.registrar(
+            db,
+            auditoria.LOGIN_FALHA,
+            request=request,
+            usuario_cpf=cpf_informado,
+            sucesso=False,
+            detalhe="Login bloqueado temporariamente por excesso de tentativas.",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Muitas tentativas de login. Aguarde {LOGIN_JANELA_MINUTOS} minutos "
+                "antes de tentar novamente."
+            ),
+        )
+
+    user = crud.get_user_by_cpf(db, cpf=cpf_informado)
+
     # Verifica se o usuário existe e se a senha está correta
     if not user or not verify_password(form_data.password, user.hashed_password):
+        auditoria.registrar(
+            db,
+            auditoria.LOGIN_FALHA,
+            request=request,
+            usuario_cpf=cpf_informado,
+            sucesso=False,
+            detalhe="CPF ou senha incorretos.",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="CPF ou senha incorretos",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    if not user.is_active:
+        auditoria.registrar(
+            db,
+            auditoria.LOGIN_FALHA,
+            request=request,
+            usuario=user,
+            sucesso=False,
+            detalhe="Tentativa de login em conta inativa.",
+        )
+        raise HTTPException(status_code=403, detail="Usuário inativo")
+
     # Cria o token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.cpf, "role": user.role}, 
+        data={"sub": user.cpf, "role": user.role, "tv": user.token_version or 1},
         expires_delta=access_token_expires
     )
     csrf_token = secrets.token_urlsafe(32)
 
-    response.set_cookie(
-        key=AUTH_COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        secure=IS_PRODUCTION,
-        samesite=COOKIE_SAMESITE,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
+    _definir_cookie_sessao(response, AUTH_COOKIE_NAME, access_token, httponly=True)
+    _definir_cookie_sessao(response, CSRF_COOKIE_NAME, csrf_token, httponly=False)
+
+    auditoria.registrar(
+        db,
+        auditoria.LOGIN_SUCESSO,
+        request=request,
+        usuario=user,
     )
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_token,
-        httponly=False,
-        secure=IS_PRODUCTION,
-        samesite=COOKIE_SAMESITE,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
-    )
-    
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @app.post("/api/logout", tags=["Autenticação"])
-def logout(response: Response):
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    # O logout não exige sessão válida, então identificamos o autor pelo token
+    # apenas para fins de registro — sem bloquear a limpeza dos cookies.
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    auth_header = request.headers.get("Authorization", "")
+    if not token and auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "", 1)
+
+    if token:
+        payload = decode_access_token_payload(token)
+        if payload:
+            usuario = crud.get_user_by_cpf(db, cpf=payload.cpf)
+            if usuario:
+                auditoria.registrar(db, auditoria.LOGOUT, request=request, usuario=usuario)
+
     response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
     response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
     return {"message": "Logout realizado com sucesso."}
@@ -312,6 +473,7 @@ def get_csrf_token(request: Request, response: Response):
 @app.post("/api/cadastro-completo", response_model=schemas.Preso, tags=["Presos"])
 def create_preso_e_processo(
     cadastro: schemas.PresoCadastroCompleto,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # <-- ROTA PROTEGIDA
 ):
@@ -320,9 +482,22 @@ def create_preso_e_processo(
     Exige autenticação.
     """
     # (Opcional: verificar se o 'current_user' tem permissão de cadastro)
-    
+
     try:
-        return crud.create_preso_completo(db=db, cadastro=cadastro)
+        novo_preso = crud.create_preso_completo(db=db, cadastro=cadastro)
+        auditoria.registrar(
+            db,
+            auditoria.PRESO_CRIADO,
+            request=request,
+            usuario=current_user,
+            entidade="preso",
+            entidade_id=novo_preso.id,
+            detalhe=(
+                f"Cadastrou '{novo_preso.nome_completo}' com "
+                f"{len(cadastro.processos)} processo(s)."
+            ),
+        )
+        return novo_preso
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Dados inválidos ou conflitantes para cadastro.")
@@ -334,6 +509,7 @@ def create_preso_e_processo(
 @app.post("/api/presos/", response_model=schemas.Preso, tags=["Presos"])
 def create_preso(
     preso: schemas.PresoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -342,7 +518,32 @@ def create_preso(
         db_preso = crud.get_preso_by_cpf(db, cpf=preso.cpf)
         if db_preso:
             raise HTTPException(status_code=400, detail="CPF já cadastrado")
-    return crud.create_preso(db=db, preso=preso)
+
+    novo_preso = crud.create_preso(db=db, preso=preso)
+    auditoria.registrar(
+        db,
+        auditoria.PRESO_CRIADO,
+        request=request,
+        usuario=current_user,
+        entidade="preso",
+        entidade_id=novo_preso.id,
+        detalhe=f"Cadastrou '{novo_preso.nome_completo}'.",
+    )
+    return novo_preso
+
+
+@app.get("/api/presos/status-processuais", response_model=List[str], tags=["Presos"])
+def listar_status_processuais(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Lista os status processuais em uso no banco.
+
+    O campo é digitado livremente no cadastro, então os filtros precisam
+    refletir o que existe de fato — não uma lista fixa.
+    """
+    return crud.get_status_processuais(db)
 
 @app.get("/api/presos/search/", response_model=List[schemas.PresoDetalhe], tags=["Presos"])
 def search_presos_endpoint( # Mudei o nome da função para evitar conflito
@@ -396,18 +597,30 @@ def read_preso_details(
 def create_processo_for_preso(
     preso_id: int,
     processo: schemas.ProcessoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     # (Poderia checar se o preso_id existe primeiro, mas o FK do banco já vai barrar)
-    return crud.create_processo(db=db, processo=processo, preso_id=preso_id)
+    novo_processo = crud.create_processo(db=db, processo=processo, preso_id=preso_id)
+    auditoria.registrar(
+        db,
+        auditoria.PROCESSO_CRIADO,
+        request=request,
+        usuario=current_user,
+        entidade="processo",
+        entidade_id=novo_processo.id,
+        detalhe=f"Criou o processo '{novo_processo.numero_processo}' para o preso #{preso_id}.",
+    )
+    return novo_processo
 
 # --- Endpoints de Evento ---
 
 @app.post("/api/processos/{processo_id}/eventos/", response_model=schemas.Evento, tags=["Eventos"])
 def create_evento_for_processo(
-    processo_id: int, 
-    evento: schemas.EventoCreate, 
+    processo_id: int,
+    evento: schemas.EventoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # <-- ADICIONE A PROTEÇÃO
 ):
@@ -415,12 +628,22 @@ def create_evento_for_processo(
     novo_evento = crud.create_evento(db=db, evento=evento, processo_id=processo_id)
     _sincronizar_alertas_status(db)
     db.refresh(novo_evento)
+    auditoria.registrar(
+        db,
+        auditoria.EVENTO_CRIADO,
+        request=request,
+        usuario=current_user,
+        entidade="evento",
+        entidade_id=novo_evento.id,
+        detalhe=f"Criou evento '{novo_evento.tipo_evento.value}' no processo #{processo_id}.",
+    )
     return novo_evento
 
 @app.put("/api/eventos/{evento_id}", response_model=schemas.Evento, tags=["Eventos"])
 def update_evento(
-    evento_id: int, 
-    evento_update: schemas.EventoCreate, 
+    evento_id: int,
+    evento_update: schemas.EventoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -428,18 +651,38 @@ def update_evento(
     if not db_evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
     _sincronizar_alertas_status(db)
+    auditoria.registrar(
+        db,
+        auditoria.EVENTO_ATUALIZADO,
+        request=request,
+        usuario=current_user,
+        entidade="evento",
+        entidade_id=evento_id,
+        detalhe=f"Atualizou evento '{db_evento.tipo_evento.value}'.",
+    )
     return db_evento
 
 @app.delete("/api/eventos/{evento_id}", status_code=204, tags=["Eventos"])
 def delete_evento(
-    evento_id: int, 
+    evento_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    admin_user: models.User = Depends(get_current_admin_user)
 ):
+    """Exclui um evento. (Protegido - Apenas Admins)"""
     db_evento = crud.delete_evento(db=db, evento_id=evento_id)
     if not db_evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
     _sincronizar_alertas_status(db)
+    auditoria.registrar(
+        db,
+        auditoria.EVENTO_EXCLUIDO,
+        request=request,
+        usuario=admin_user,
+        entidade="evento",
+        entidade_id=evento_id,
+        detalhe=f"Excluiu evento '{db_evento.tipo_evento.value}' do processo #{db_evento.processo_id}.",
+    )
     return None
 
 # --- Endpoint de Alerta (O MVP do seu sistema de alertas) ---
@@ -674,6 +917,7 @@ class EventoStatusUpdate(BaseModel):
 def update_evento_status(
     evento_id: int,
     status_update: EventoStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # Protegido
 ):
@@ -681,15 +925,25 @@ def update_evento_status(
     Atualiza o status de um evento (ex: de 'disparado' para 'concluido').
     """
     db_evento = db.query(models.Evento).filter(models.Evento.id == evento_id).first()
-    
+
     if db_evento is None:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
-    
+
     # (Opcional: verificar se o 'current_user' tem permissão para este evento)
 
+    status_anterior = db_evento.alerta_status.value
     db_evento.alerta_status = status_update.status
     db.commit()
     db.refresh(db_evento)
+    auditoria.registrar(
+        db,
+        auditoria.EVENTO_STATUS_ALTERADO,
+        request=request,
+        usuario=current_user,
+        entidade="evento",
+        entidade_id=evento_id,
+        detalhe=f"Status alterado de '{status_anterior}' para '{status_update.status.value}'.",
+    )
     return db_evento
 
 # --- NOVOS ENDPOINTS DE UPDATE (PUT) E DELETE ---
@@ -698,6 +952,7 @@ def update_evento_status(
 def update_preso_endpoint(
     preso_id: int,
     preso_update: schemas.PresoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # Protegido
 ):
@@ -705,6 +960,15 @@ def update_preso_endpoint(
     db_preso = crud.update_preso(db, preso_id=preso_id, preso_update=preso_update)
     if db_preso is None:
         raise HTTPException(status_code=404, detail="Preso não encontrado")
+    auditoria.registrar(
+        db,
+        auditoria.PRESO_ATUALIZADO,
+        request=request,
+        usuario=current_user,
+        entidade="preso",
+        entidade_id=preso_id,
+        detalhe=f"Atualizou os dados de '{db_preso.nome_completo}'.",
+    )
     return db_preso
 
 
@@ -712,6 +976,7 @@ def update_preso_endpoint(
 def update_processo_endpoint(
     processo_id: int,
     processo_update: schemas.ProcessoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user) # Protegido
 ):
@@ -719,19 +984,41 @@ def update_processo_endpoint(
     db_processo = crud.update_processo(db, processo_id=processo_id, processo_update=processo_update)
     if db_processo is None:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
+    auditoria.registrar(
+        db,
+        auditoria.PROCESSO_ATUALIZADO,
+        request=request,
+        usuario=current_user,
+        entidade="processo",
+        entidade_id=processo_id,
+        detalhe=f"Atualizou o processo '{db_processo.numero_processo}'.",
+    )
     return db_processo
 
 
 @app.delete("/api/presos/{preso_id}", response_model=schemas.Preso, tags=["Presos"])
 def delete_preso_endpoint(
     preso_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # Protegido
+    admin_user: models.User = Depends(get_current_admin_user)
 ):
-    """Deleta um preso e todos os seus dados associados."""
+    """
+    Deleta um preso e todos os seus dados associados.
+    (Protegido - Apenas Admins, pois a exclusão é em cascata e irreversível.)
+    """
     db_preso = crud.delete_preso(db, preso_id=preso_id)
     if db_preso is None:
         raise HTTPException(status_code=404, detail="Preso não encontrado")
+    auditoria.registrar(
+        db,
+        auditoria.PRESO_EXCLUIDO,
+        request=request,
+        usuario=admin_user,
+        entidade="preso",
+        entidade_id=preso_id,
+        detalhe=f"Excluiu '{db_preso.nome_completo}' e todos os processos/eventos vinculados.",
+    )
     return db_preso
 
 @app.get("/api/users/me", response_model=schemas.User, tags=["Usuário"])
@@ -771,30 +1058,62 @@ def update_users_me_notifications(
 @app.put("/api/users/me", response_model=schemas.User, tags=["Usuário"])
 def update_users_me(
     user_in: schemas.UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     """Atualiza o nome e/ou email do usuário logado."""
-    return crud.update_user_profile(db=db, db_user=current_user, user_in=user_in)
+    usuario = crud.update_user_profile(db=db, db_user=current_user, user_in=user_in)
+    auditoria.registrar(
+        db,
+        auditoria.PERFIL_ATUALIZADO,
+        request=request,
+        usuario=current_user,
+        entidade="usuario",
+        entidade_id=current_user.id,
+        detalhe="Atualizou os próprios dados de perfil.",
+    )
+    return usuario
 
 
 @app.put("/api/users/me/password", tags=["Usuário"])
 def change_users_me_password(
     password_data: schemas.PasswordChange,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     """Muda a senha do usuário logado."""
     # 1. Verifica se a senha antiga está correta
     if not verify_password(password_data.senha_antiga, current_user.hashed_password):
+        auditoria.registrar(
+            db,
+            auditoria.USUARIO_SENHA_ALTERADA,
+            request=request,
+            usuario=current_user,
+            entidade="usuario",
+            entidade_id=current_user.id,
+            sucesso=False,
+            detalhe="Troca de senha recusada: senha antiga incorreta.",
+        )
         raise HTTPException(status_code=400, detail="Senha antiga incorreta.")
-    
-    # 2. (Opcional) Verifica a força da nova senha
-    if len(password_data.nova_senha) < 8:
-         raise HTTPException(status_code=400, detail="Nova senha deve ter pelo menos 8 caracteres.")
-    
+
+    # 2. Verifica a força da nova senha
+    erro_senha = validar_forca_senha(password_data.nova_senha)
+    if erro_senha:
+        raise HTTPException(status_code=400, detail=erro_senha)
+
     # 3. Atualiza a senha
     crud.update_user_password(db=db, db_user=current_user, nova_senha=password_data.nova_senha)
+    auditoria.registrar(
+        db,
+        auditoria.USUARIO_SENHA_ALTERADA,
+        request=request,
+        usuario=current_user,
+        entidade="usuario",
+        entidade_id=current_user.id,
+        detalhe="Alterou a própria senha. Sessões anteriores foram encerradas.",
+    )
     return {"message": "Senha atualizada com sucesso."}
 
 # --- NOVO ENDPOINT DE LISTAR USUÁRIOS ---
@@ -820,6 +1139,7 @@ def read_users(
 def admin_reset_user_password(
     user_id: int,
     password_data: schemas.AdminPasswordReset,
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(get_current_admin_user) # Protegido
 ):
@@ -830,17 +1150,30 @@ def admin_reset_user_password(
     db_user = crud.get_user(db, user_id=user_id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
+
     # 2. (Opcional) Impede um admin de resetar a própria senha por aqui
     if db_user.id == admin_user.id:
         raise HTTPException(status_code=400, detail="Admin não pode resetar a própria senha por este endpoint. Use /users/me/change-password.")
-        
+
     # 3. Verifica a força da nova senha
-    if len(password_data.nova_senha) < 8:
-         raise HTTPException(status_code=400, detail="Nova senha deve ter pelo menos 8 caracteres.")
-    
+    erro_senha = validar_forca_senha(password_data.nova_senha)
+    if erro_senha:
+        raise HTTPException(status_code=400, detail=erro_senha)
+
     # 4. Atualiza a senha (reutilizando nossa função de crud)
     crud.update_user_password(db=db, db_user=db_user, nova_senha=password_data.nova_senha)
+    auditoria.registrar(
+        db,
+        auditoria.USUARIO_SENHA_RESETADA,
+        request=request,
+        usuario=admin_user,
+        entidade="usuario",
+        entidade_id=db_user.id,
+        detalhe=(
+            f"Resetou a senha de '{db_user.nome_completo}' (CPF {db_user.cpf}). "
+            "As sessões desse usuário foram encerradas."
+        ),
+    )
     return {"message": f"Senha do usuário '{db_user.nome_completo}' atualizada com sucesso."}
 
 # --- NOVO ENDPOINT DE EDIÇÃO (ADMIN) ---
@@ -848,6 +1181,7 @@ def admin_reset_user_password(
 def update_user_by_admin_endpoint(
     user_id: int,
     user_in: schemas.UserUpdate, # O schema só permite mudar nome, email e tema
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(get_current_admin_user) # Protegido
 ):
@@ -856,12 +1190,68 @@ def update_user_by_admin_endpoint(
     """
     try:
         updated_user = crud.update_user_by_admin(db, user_id=user_id, user_in=user_in)
+        auditoria.registrar(
+            db,
+            auditoria.USUARIO_ATUALIZADO,
+            request=request,
+            usuario=admin_user,
+            entidade="usuario",
+            entidade_id=user_id,
+            detalhe=f"Atualizou os dados de '{updated_user.nome_completo}'.",
+        )
         return updated_user
     except HTTPException as e:
         raise e
     except Exception:
         logger.exception("Falha ao atualizar usuário por admin")
         raise HTTPException(status_code=500, detail="Não foi possível atualizar o usuário no momento.")
+
+
+# --- Auditoria (Apenas Admins) ---
+
+
+@app.get("/api/logs", response_model=List[schemas.LogAuditoria], tags=["Auditoria"])
+def listar_logs_auditoria(
+    response: Response,
+    db: Session = Depends(get_db),
+    admin_user: models.User = Depends(get_current_admin_user),
+    skip: int = Query(default=0, ge=0, le=100000),
+    limit: int = Query(default=50, ge=1, le=200),
+    acao: Optional[str] = None,
+    usuario_cpf: Optional[str] = None,
+    entidade: Optional[str] = None,
+    sucesso: Optional[bool] = None,
+    data_inicio: Optional[datetime] = None,
+    data_fim: Optional[datetime] = None,
+):
+    """
+    Lista a trilha de auditoria, da mais recente para a mais antiga.
+    (Protegido - Apenas Admins)
+    """
+    itens, total = auditoria.listar_logs(
+        db,
+        skip=skip,
+        limit=limit,
+        acao=acao,
+        usuario_cpf=usuario_cpf,
+        entidade=entidade,
+        sucesso=sucesso,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return itens
+
+
+@app.get("/api/logs/acoes", response_model=List[schemas.AcaoAuditoria], tags=["Auditoria"])
+def listar_acoes_auditoria(
+    admin_user: models.User = Depends(get_current_admin_user),
+):
+    """Lista as ações registráveis com rótulos legíveis, para montar filtros."""
+    return [
+        schemas.AcaoAuditoria(valor=valor, rotulo=rotulo)
+        for valor, rotulo in auditoria.ACOES_DISPONIVEIS.items()
+    ]
 
 
 @app.post(
@@ -871,8 +1261,18 @@ def update_user_by_admin_endpoint(
 )
 def consultar_processo_integracoes(
     payload: schemas.ProcessoConsultaIntegracaoRequest,
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    auditoria.registrar(
+        db,
+        auditoria.INTEGRACAO_CONSULTADA,
+        request=request,
+        usuario=current_user,
+        entidade="processo",
+        detalhe=f"Consultou o processo '{payload.numero_processo}' nas fontes: {', '.join(payload.fontes)}.",
+    )
     try:
         return consultar_processo_externo(
             numero_processo=payload.numero_processo,
@@ -893,8 +1293,19 @@ def consultar_processo_integracoes(
 )
 def consultar_cpf_integracao(
     payload: schemas.PessoaConsultaCPFRequest,
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # Consulta de dados pessoais por CPF é sensível: fica sempre registrada.
+    auditoria.registrar(
+        db,
+        auditoria.INTEGRACAO_CONSULTADA,
+        request=request,
+        usuario=current_user,
+        entidade="pessoa",
+        detalhe=f"Consultou dados pessoais do CPF '{payload.cpf}' em integração externa.",
+    )
     try:
         return consultar_cpf_externo(cpf=payload.cpf)
     except ValueError as exc:

@@ -12,6 +12,7 @@ const PaginaAlertas = React.lazy(() => import('../paginas/PaginaAlertas').then(m
 const PaginaAjuda = React.lazy(() => import('../paginas/PaginaAjuda').then(m => ({ default: m.PaginaAjuda })));
 const PaginaPerfil = React.lazy(() => import('../paginas/PaginaPerfil').then(m => ({ default: m.PaginaPerfil })));
 const PaginaAdminUsuarios = React.lazy(() => import('../paginas/PaginaAdminUsuarios').then(m => ({ default: m.PaginaAdminUsuarios })));
+const PaginaAdminLogs = React.lazy(() => import('../paginas/PaginaAdminLogs').then(m => ({ default: m.PaginaAdminLogs })));
 const PaginaRelatorios = React.lazy(() => import('../paginas/PaginaRelatorios').then(m => ({ default: m.PaginaRelatorios })));
 
 // --- LÓGICA DE AUTENTICAÇÃO ---
@@ -57,7 +58,8 @@ const router = createBrowserRouter([
         path: 'admin',
         element: <RotaAdmin />, // 5. Protege o grupo de rotas de admin
         children: [
-          { path: 'usuarios', element: <PaginaAdminUsuarios /> }
+          { path: 'usuarios', element: <PaginaAdminUsuarios /> },
+          { path: 'logs', element: <PaginaAdminLogs /> }
         ]
       }
     ]
